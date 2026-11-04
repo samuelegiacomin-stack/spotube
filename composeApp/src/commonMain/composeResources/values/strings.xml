@@ -1111,5 +1111,5 @@
     <string name="media_browser_top_tracks">Top Tracks</string>
     <string name="playlist_download_button">Download playlist</string>
     <string name="playlist_download_failed">Could not load the playlist for download. Try again.</string>
-    <string name="downloads_progress_percent">%1$d%%</string>
+    <string name="downloads_progress_percent">%1$d%</string>
 </resources>

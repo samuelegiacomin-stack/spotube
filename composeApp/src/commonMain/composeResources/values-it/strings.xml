@@ -931,5 +931,5 @@
     <string name="media_browser_top_tracks">Brani più popolari</string>
     <string name="playlist_download_button">Scarica playlist</string>
     <string name="playlist_download_failed">Impossibile caricare la playlist da scaricare. Riprova.</string>
-    <string name="downloads_progress_percent">%1$d%%</string>
+    <string name="downloads_progress_percent">%1$d%</string>
 </resources>
