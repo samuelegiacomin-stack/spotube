@@ -30,10 +30,9 @@ import org.spotube.spotube.core.server.urlSummary
 import org.spotube.plugin_interfaces.plugin_apis.audio.StreamProtocol
 import org.spotube.spotube.modules.settings.SettingsRepository
 import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsChannel
-import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
@@ -51,7 +50,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.io.readByteArray
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
@@ -274,14 +272,17 @@ class DownloadManager(
 
             val filename = buildFilename(item, streamInfo)
 
-            // Verify byte ranges before parallel transfer; fall back to bounded-memory GET.
-            executeSingleConnectionDownload(url, filename, item, downloadDir)
+            coroutineScope {
+                // Fetch this song's artwork while its audio transfers, instead of starting
+                // another network wait at 99%. Cancellation stops both requests together.
+                val artwork = async { fetchCover(item) }
+                executeSingleConnectionDownload(url, filename, item, downloadDir)
 
-            val finalPath = downloadDir / filename.toPath()
-            val writtenBytes = fileSystem.metadataOrNull(finalPath)?.size
-            logger.i { "[Download ${item.id}] wrote $finalPath ($writtenBytes bytes)" }
-
-            applyMetadata(item, filename, downloadDir)
+                val finalPath = downloadDir / filename.toPath()
+                val writtenBytes = fileSystem.metadataOrNull(finalPath)?.size
+                logger.i { "[Download ${item.id}] wrote $finalPath ($writtenBytes bytes)" }
+                applyMetadata(item, filename, downloadDir, artwork.await())
+            }
             // Without this Android music players and the Files app's Audio view don't see the
             // file until the next full media scan.
             addToMediaLibrary((downloadDir / filename.toPath()).toString())
@@ -377,7 +378,20 @@ class DownloadManager(
         }
     }
 
-    private suspend fun applyMetadata(item: DownloadItem, filename: String, downloadDir: Path) {
+    private suspend fun fetchCover(item: DownloadItem): ByteArray? {
+        val track = item.track ?: return null
+        val thumbnails = track.thumbnails.orEmpty().ifEmpty { track.album?.thumbnails.orEmpty() }
+        return try {
+            downloadArtwork(httpClient, thumbnails.maxByOrNull { it.width.toLong() * it.height }?.url)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.w(e) { "Failed to download cover art for ${item.title}" }
+            null
+        }
+    }
+
+    private suspend fun applyMetadata(item: DownloadItem, filename: String, downloadDir: Path, coverBytes: ByteArray?) {
         val filePath = downloadDir / filename.toPath()
         if (!fileSystem.exists(filePath)) {
             logger.w { "[Download ${item.id}] skipping metadata: $filePath does not exist" }
@@ -386,27 +400,6 @@ class DownloadManager(
         logger.d { "[Download ${item.id}] writing metadata to $filePath" }
 
         val track = item.track ?: return
-
-        val coverBytes = try {
-            kotlinx.coroutines.withTimeoutOrNull(8_000) {
-                val thumbnail = (track.thumbnails ?: track.album?.thumbnails)?.maxByOrNull { it.width * it.height }
-                if (thumbnail != null) {
-                    val response = httpClient.get(thumbnail.url)
-                    val channel = response.bodyAsChannel()
-                    val packet = channel.readRemaining()
-                    val bytes = packet.readByteArray()
-                    packet.close()
-                    bytes
-                } else {
-                    null
-                }
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            logger.w(e) { "Failed to download cover art for ${item.title}" }
-            null
-        }
 
         try {
             uniffi.compose_app.writeAudioMetadata(
