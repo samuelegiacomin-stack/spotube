@@ -51,8 +51,10 @@ class DeviceAudioPlayerQueueTest {
         stopKoin()
     }
 
-    private fun createQueue(): DeviceAudioPlayerQueue {
-        return DeviceAudioPlayerQueue(fakePlayer, fakeSettings, fakeRepo, fakePlugin, fakeBlacklist)
+    private fun createQueue(endpoint: org.spotube.spotube.core.server.PlaybackProxyEndpoint =
+        org.spotube.spotube.core.server.PlaybackProxyEndpoint().apply { publish(14769) }): DeviceAudioPlayerQueue {
+        return DeviceAudioPlayerQueue(fakePlayer, fakeSettings, fakeRepo, fakePlugin, fakeBlacklist,
+            endpoint)
     }
 
     private fun streamingTrack(
@@ -446,6 +448,21 @@ class DeviceAudioPlayerQueueTest {
     }
 
     // --- toMediaItem / toFallbackQueueEntry ---
+
+    @Test fun `old persisted proxy URLs are rebound to the actual listening port`() = runTest {
+        val endpoint = org.spotube.spotube.core.server.PlaybackProxyEndpoint().apply { publish(24001) }
+        val queue = createQueue(endpoint)
+        queue.addToQueue(streamingEntry("t1", url = "http://127.0.0.1:14769/stream/t1"))
+        assertEquals("http://127.0.0.1:24001/stream/t1", fakePlayer.lastAddedMediaItem?.url)
+        assertEquals("t1", queue.findStreamingTrack("t1")?.track?.id)
+    }
+
+    @Test fun `blank streaming URLs use the bound port instead of settings`() = runTest {
+        val endpoint = org.spotube.spotube.core.server.PlaybackProxyEndpoint().apply { publish(24002) }
+        val queue = createQueue(endpoint)
+        queue.addToQueue(streamingEntry("t1", url = ""))
+        assertEquals("http://127.0.0.1:24002/stream/t1", fakePlayer.lastAddedMediaItem?.url)
+    }
 
     @Test
     fun `streaming track converts to media item`() = runTest {

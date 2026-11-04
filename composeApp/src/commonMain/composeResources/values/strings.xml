@@ -1112,4 +1112,6 @@
     <string name="playlist_download_button">Download playlist</string>
     <string name="playlist_download_failed">Could not load the playlist for download. Try again.</string>
     <string name="downloads_progress_percent">%1$d%</string>
+    <string name="player_playback_failed">Playback failed: %1$s</string>
+    <string name="downloads_error_not_audio">The server did not send an audio file.</string>
 </resources>

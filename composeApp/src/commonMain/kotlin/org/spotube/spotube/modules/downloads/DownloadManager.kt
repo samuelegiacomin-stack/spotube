@@ -31,11 +31,7 @@ import org.spotube.plugin_interfaces.plugin_apis.audio.StreamProtocol
 import org.spotube.spotube.modules.settings.SettingsRepository
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
-import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.http.HttpHeaders
-import io.ktor.http.contentLength
-import io.ktor.http.isSuccess
 import io.ktor.utils.io.readRemaining
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -278,8 +274,7 @@ class DownloadManager(
 
             val filename = buildFilename(item, streamInfo)
 
-            // Some audio providers reject HEAD or advertise ranges but return 200 to Range.
-            // A streamed GET needs neither feature, and uses bounded memory on iPhone.
+            // Verify byte ranges before parallel transfer; fall back to bounded-memory GET.
             executeSingleConnectionDownload(url, filename, item, downloadDir)
 
             val finalPath = downloadDir / filename.toPath()
@@ -330,25 +325,14 @@ class DownloadManager(
         val tempFile = downloadDir / ".${item.id}.part"
         try {
 
-            httpClient.prepareGet(url).execute { response ->
-                val totalSize = response.contentLength() ?: 0L
-                logger.i {
-                    "[Download ${item.id}] GET -> HTTP ${response.status.value} " +
-                        "type=${response.headers[HttpHeaders.ContentType]} length=$totalSize"
-                }
-                if (!response.status.isSuccess()) {
-                    logger.w { "[Download ${item.id}] GET got HTTP ${response.status}; failing download" }
-                    throw DownloadException(getString(Res.string.downloads_error_http, response.status.value))
-                }
-                rejectVideo(item.id, response.headers[HttpHeaders.ContentType])
-                val channel = response.bodyAsChannel()
-
-                fileSystem.sink(tempFile).buffer().use { sink ->
-                    copyDownloadBody(channel, sink, totalSize) { count ->
-                        updateProgress(item.id, count, totalSize)
+            DownloadTransfer(httpClient, fileSystem).download(url, tempFile,
+                onRestart = {
+                    downloadsMap.update { map ->
+                        map[item.id]?.let { map + (item.id to it.copy(
+                            progress = 0f, downloadedBytes = 0L, totalBytes = 0L)) } ?: map
                     }
-                }
-            }
+                },
+                onChunk = { bytes, total -> updateProgress(item.id, bytes, total) })
 
             val finalPath = downloadDir / filename.toPath()
             currentCoroutineContext().ensureActive()
@@ -370,17 +354,6 @@ class DownloadManager(
                     downloadedBytes = newDownloaded,
                     totalBytes = totalSize))
             } ?: map
-        }
-    }
-
-    /**
-     * Some sources only offer muxed video (e.g. NewPipe falls back to video streams when a video
-     * has no audio-only ones). Saving that as a "song" is worse than failing with a clear reason.
-     */
-    private suspend fun rejectVideo(id: String, contentType: String?) {
-        if (contentType?.startsWith("video/", ignoreCase = true) == true) {
-            logger.w { "[Download $id] server says this is VIDEO ($contentType), not audio; failing download" }
-            throw DownloadException(getString(Res.string.downloads_error_video_only))
         }
     }
 
@@ -415,16 +388,18 @@ class DownloadManager(
         val track = item.track ?: return
 
         val coverBytes = try {
-            val thumbnail = track.thumbnails?.maxByOrNull { it.width * it.height }
-            if (thumbnail != null) {
-                val response = httpClient.get(thumbnail.url)
-                val channel = response.bodyAsChannel()
-                val packet = channel.readRemaining()
-                val bytes = packet.readByteArray()
-                packet.close()
-                bytes
-            } else {
-                null
+            kotlinx.coroutines.withTimeoutOrNull(8_000) {
+                val thumbnail = (track.thumbnails ?: track.album?.thumbnails)?.maxByOrNull { it.width * it.height }
+                if (thumbnail != null) {
+                    val response = httpClient.get(thumbnail.url)
+                    val channel = response.bodyAsChannel()
+                    val packet = channel.readRemaining()
+                    val bytes = packet.readByteArray()
+                    packet.close()
+                    bytes
+                } else {
+                    null
+                }
             }
         } catch (e: CancellationException) {
             throw e

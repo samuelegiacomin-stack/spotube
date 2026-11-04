@@ -23,6 +23,8 @@ import org.spotube.spotube.modules.blacklist.BlacklistRepository
 import org.spotube.spotube.modules.library.local_tracks.media.LocalMediaCacheRepository
 import org.spotube.spotube.modules.plugin.PluginProvider
 import org.spotube.spotube.modules.settings.SettingsProvider
+import org.spotube.spotube.core.server.PlaybackProxyEndpoint
+import org.spotube.spotube.core.server.isPlaybackProxyUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -48,13 +50,17 @@ class DeviceAudioPlayerQueue(
     private val settingsProvider: SettingsProvider,
     private val repository: QueueStateRepository,
     private val pluginProvider: PluginProvider,
-    private val blacklistRepository: BlacklistRepository) : AudioPlayerQueue, KoinComponent {
+    private val blacklistRepository: BlacklistRepository,
+    private val playbackEndpoint: PlaybackProxyEndpoint) : AudioPlayerQueue, KoinComponent {
 
     private val logger by injectLogger<DeviceAudioPlayerQueue>()
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private val entryByMediaUrl = MutableStateFlow<Map<String, QueueEntry>>(emptyMap())
+    override fun findStreamingTrack(trackId: String): QueueEntry.StreamingTrack? =
+        entryByMediaUrl.value.values.filterIsInstance<QueueEntry.StreamingTrack>()
+            .firstOrNull { it.track.id == trackId }
     private val currentCollectionEntryState = MutableStateFlow<QueueCollectionEntry?>(null)
     private val collectionHistoryState = MutableStateFlow<List<QueueCollectionEntry>>(emptyList())
 
@@ -515,7 +521,10 @@ class DeviceAudioPlayerQueue(
     private suspend fun QueueEntry.toMediaItem(): MediaItem? {
         return when (this) {
             is QueueEntry.StreamingTrack -> {
-                val resolvedUrl = url.ifBlank { buildStreamingUrl(track.id, protocol) }
+                // Persisted loopback URLs belong to an earlier server instance/port.
+                val resolvedUrl = if (url.isBlank() || isPlaybackProxyUrl(url)) {
+                    buildStreamingUrl(track.id, protocol)
+                } else url
                 if (resolvedUrl.isBlank()) return null
                 MediaItem(
                     title = track.title,
@@ -552,12 +561,6 @@ class DeviceAudioPlayerQueue(
     }
 
     private suspend fun buildStreamingUrl(trackId: String, protocol: StreamProtocol): String {
-        val port: Int =
-            settingsProvider.settingsState.mapNotNull { it?.playbackProxyServerPort }.first()
-        val baseUrl = "http://127.0.0.1:$port"
-        return when (protocol) {
-            StreamProtocol.HLS, StreamProtocol.DASH -> "${baseUrl.trimEnd('/')}/manifest/$trackId"
-            StreamProtocol.PROGRESSIVE -> "${baseUrl.trimEnd('/')}/stream/$trackId"
-        }
+        return playbackEndpoint.url(trackId, protocol)
     }
 }

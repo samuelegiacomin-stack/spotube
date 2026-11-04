@@ -20,6 +20,9 @@ package org.spotube.spotube.core.remote
 import co.touchlab.kermit.Logger
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
+import org.spotube.spotube.core.audioplayer.AudioPlayerInterface
+import kotlinx.coroutines.CancellationException
+import spotube.composeapp.generated.resources.player_playback_failed
 import org.spotube.spotube.core.audioplayer.QueueEntry
 import org.spotube.spotube.core.jam.JamRole
 import org.spotube.spotube.core.jam.JamRoomService
@@ -122,6 +125,15 @@ class RemotePlaybackController(
     /** One-shot user-facing messages (e.g. "added to jam queue") for a snackbar host. */
     private val _events = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val events: SharedFlow<String> = _events.asSharedFlow()
+
+    fun observePlaybackErrors(player: AudioPlayerInterface) {
+        scope.launch {
+            player.errorFlow.collect { error ->
+                logger.e(error) { "Local playback failed" }
+                _events.emit(getString(Res.string.player_playback_failed, error.message.orEmpty()))
+            }
+        }
+    }
 
     /** Collection actions currently running locally; see [CollectionPlaybackKey]. */
     private val _busyCollections = MutableStateFlow<Set<CollectionPlaybackKey>>(emptySet())
@@ -273,6 +285,8 @@ class RemotePlaybackController(
                 executeLocallyNow(request)
             } catch (e: Exception) {
                 logger.e(e) { "Failed to play ${request.title} locally" }
+                if (e is CancellationException) throw e
+                _events.emit(getString(Res.string.player_playback_failed, e.message.orEmpty()))
             } finally {
                 busyKey?.let { key -> _busyCollections.update { it - key } }
             }

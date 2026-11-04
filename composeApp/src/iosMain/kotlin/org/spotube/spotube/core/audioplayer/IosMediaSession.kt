@@ -20,6 +20,10 @@
 package org.spotube.spotube.core.audioplayer
 
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.usePinned
+import kotlinx.cinterop.addressOf
+import platform.Foundation.NSData
+import platform.Foundation.create
 import platform.AVFAudio.AVAudioSession
 import platform.AVFAudio.AVAudioSessionCategoryPlayback
 import platform.AVFAudio.AVAudioSessionModeDefault
@@ -123,7 +127,7 @@ internal class IosMediaSession {
             return
         }
 
-        updateArtwork(item.coverURL)
+        updateArtwork(item)
         val info = buildMap<Any?, Any?> {
             artwork?.let { put(MPMediaItemPropertyArtwork, it) }
             put(MPMediaItemPropertyTitle, item.title)
@@ -169,13 +173,24 @@ internal class IosMediaSession {
         artwork = null
     }
 
-    private fun updateArtwork(url: String) {
+    private fun updateArtwork(item: MediaItem) {
+        val embedded = item.coverBytes?.takeIf { it.isNotEmpty() && it.size <= 8_000_000 }
+        val url = if (embedded != null) "embedded:${item.url}" else item.coverURL
         // Never fetch or decode the cover on each playback-position event.
         if (artworkUrl == url) return
         resetArtwork()
         artworkUrl = url
         artwork = artworkCache[url]
         if (artwork != null || url.isBlank()) return
+        if (embedded != null) {
+            val image = embedded.usePinned {
+                UIImage(data = NSData.create(bytes = it.addressOf(0), length = embedded.size.toULong()))
+            } ?: return
+            artwork = MPMediaItemArtwork(boundsSize = image.size, requestHandler = { image })
+            artworkCache[url] = artwork!!
+            if (artworkCache.size > 4) artworkCache.remove(artworkCache.keys.first())
+            return
+        }
         val nativeUrl = NSURL.URLWithString(url) ?: return
         artworkTask = NSURLSession.sharedSession.dataTaskWithURL(nativeUrl) { data, response, error ->
             val status = (response as? NSHTTPURLResponse)?.statusCode ?: 200L

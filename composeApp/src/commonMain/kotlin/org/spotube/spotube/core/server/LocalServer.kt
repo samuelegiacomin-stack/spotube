@@ -60,7 +60,8 @@ class LocalServer(
     private val audioPlayerQueue: AudioPlayerQueue,
     private val cacheManager: CacheManager,
     private val remoteControlHandler: RemoteControlHandler,
-    httpClientFactory: HttpClientFactory) : KoinComponent {
+    httpClientFactory: HttpClientFactory,
+    private val playbackEndpoint: PlaybackProxyEndpoint) : KoinComponent {
 
     val logger by injectLogger<LocalServer>()
     private val httpClient = httpClientFactory.create {
@@ -79,14 +80,14 @@ class LocalServer(
 
     val server: StateFlow<EmbeddedServer<*, *>?> = serverState.asStateFlow()
 
-    private val activePort = MutableStateFlow<Int?>(null)
-    val port = activePort.asStateFlow()
+    private val activePort = playbackEndpoint.port
+    val port = activePort
 
     private val activeHost = MutableStateFlow<String?>(null)
 
     val baseUrl = activePort.map { port ->
         port?.let { "http://$HOST_LOCAL:$it" }
-    }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), null)
+    }.stateIn(scope, SharingStarted.Eagerly, null)
 
     private val cachedCacheEnabled = MutableStateFlow(false)
 
@@ -171,7 +172,7 @@ class LocalServer(
                 logger.w { "Port $port is unavailable; playback proxy is using $host:${bound.port} instead" }
             }
             serverState.value = bound.engine
-            activePort.value = bound.port
+            playbackEndpoint.publish(bound.port)
             activeHost.value = host
             logger.i { "Playback proxy server started at ${baseUrl.value ?: "http://$host:${bound.port}"}" }
         }
@@ -189,7 +190,7 @@ class LocalServer(
                 }
         }
         serverState.value = null
-        activePort.value = null
+        playbackEndpoint.publish(null)
         activeHost.value = null
     }
 

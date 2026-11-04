@@ -20,6 +20,9 @@ package org.spotube.spotube.core.audioplayer
 import kotlinx.coroutines.flow.StateFlow
 
 interface AudioPlayerQueue {
+	/** Synchronous lookup for the HTTP player before UI StateFlows have caught up. */
+	fun findStreamingTrack(trackId: String): QueueEntry.StreamingTrack? =
+		queueFlow.value.filterIsInstance<QueueEntry.StreamingTrack>().firstOrNull { it.track.id == trackId }
 	val queueFlow: StateFlow<List<QueueEntry>>
 	val currentQueueEntryFlow: StateFlow<QueueEntry?>
 	val currentCollectionEntryFlow: StateFlow<QueueCollectionEntry?>

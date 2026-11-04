@@ -79,10 +79,7 @@ internal class StreamProxy(
     private val streamingMutex = Mutex()
 
     private fun getTrackMetadata(trackId: String): MetadataTrack? {
-        return audioPlayerQueue.queueFlow.value
-            .filterIsInstance<QueueEntry.StreamingTrack>()
-            .firstOrNull { it.track.id == trackId }
-            ?.track
+        return audioPlayerQueue.findStreamingTrack(trackId)?.track
     }
 
     suspend fun handleStreamRequest(call: ApplicationCall, requestMethod: HttpMethod) {

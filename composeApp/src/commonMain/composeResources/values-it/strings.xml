@@ -932,4 +932,6 @@
     <string name="playlist_download_button">Scarica playlist</string>
     <string name="playlist_download_failed">Impossibile caricare la playlist da scaricare. Riprova.</string>
     <string name="downloads_progress_percent">%1$d%</string>
+    <string name="player_playback_failed">Riproduzione non riuscita: %1$s</string>
+    <string name="downloads_error_not_audio">Il server non ha inviato un file audio.</string>
 </resources>

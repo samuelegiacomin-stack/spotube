@@ -419,7 +419,8 @@ class JamSessionSimulationTest {
             }
             DeviceAudioPlayerQueue(
                 player, FakeSettingsProvider(), FakeAudioPlayerQueueRepository(),
-                FakePluginProvider(), FakeBlacklistRepository())
+                FakePluginProvider(), FakeBlacklistRepository(),
+                org.spotube.spotube.core.server.PlaybackProxyEndpoint().apply { publish(14769) })
         } else {
             SimQueue(player, sources)
         }

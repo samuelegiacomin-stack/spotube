@@ -39,6 +39,7 @@ import org.spotube.spotube.core.playback.CollectionPlaybackHelper
 import org.spotube.spotube.core.server.AlternativeTracksRepository
 import org.spotube.spotube.core.server.CacheManager
 import org.spotube.spotube.core.server.LocalServer
+import org.spotube.spotube.core.server.PlaybackProxyEndpoint
 import org.spotube.spotube.core.server.MatchedTracksRepository
 import org.spotube.spotube.core.server.TrackSourceRepository
 import org.spotube.spotube.core.server.StreamingUrlRepository
@@ -285,7 +286,7 @@ val sharedModules = module {
     single { RemoteControlService(get(), get(), get()) } withOptions {
         createdAtStart()
     }
-    single { RemotePlaybackController(get(), get(), get(), get(), get()) }
+    single { RemotePlaybackController(get(), get(), get(), get(), get()).also { it.observePlaybackErrors(get()) } }
     singleOf(::JamRoomClient)
     single {
         JamRoomService(
@@ -293,8 +294,9 @@ val sharedModules = module {
             evictCachedAudio = get<CacheManager>()::invalidateCacheEntry)
     }
     singleOf(::AudioPlayerQueueRepository) { bind<QueueStateRepository>() }
+    singleOf(::PlaybackProxyEndpoint)
     single<AudioPlayerQueue> {
-        DeviceAudioPlayerQueue(get(), get(), get(), get(), get())
+        DeviceAudioPlayerQueue(get(), get(), get(), get(), get(), get())
     }
 
     single { DiscordRpcService(get(), get()) } withOptions { createdAtStart() }

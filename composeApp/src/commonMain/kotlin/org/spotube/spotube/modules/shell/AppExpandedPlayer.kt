@@ -120,6 +120,7 @@ import org.spotube.spotube.resources.iconsax.SwapHorizontal2
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
+import org.spotube.spotube.core.remote.RemotePlaybackController
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
 import kotlin.time.Duration.Companion.milliseconds
@@ -209,6 +210,10 @@ fun AppExpandedPlayer(
         }
     }
     val snackbarHostState = remember { MillenniumSnackbarHostState() }
+    val playbackController: RemotePlaybackController = koinInject()
+    LaunchedEffect(playbackController) {
+        playbackController.events.collect { snackbarHostState.showSnackbar(it) }
+    }
     val albumArtModifier =
         rememberSharedAlbumArtModifier(sharedTransitionScope, animatedVisibilityScope)
     val coverModel = playerUiState.coverModel

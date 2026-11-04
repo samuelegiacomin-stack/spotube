@@ -90,9 +90,7 @@ class StreamingUrlRepository(
         trackId: String,
         forceRefresh: Boolean = false
     ): StreamInfo? {
-        val queueEntry = audioPlayerQueue.queueFlow.value.firstOrNull {
-            it is QueueEntry.StreamingTrack && it.track.id == trackId
-        } as QueueEntry.StreamingTrack?
+        val queueEntry = audioPlayerQueue.findStreamingTrack(trackId)
 
         if (queueEntry == null) {
             logger.v { "Track $trackId is not present in current queue" }
