@@ -21,6 +21,8 @@ import org.spotube.spotube.core.network.HttpClientFactory
 import co.touchlab.kermit.Logger
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 import org.spotube.spotube.core.paths.Paths
+import org.spotube.spotube.PlatformType
+import org.spotube.spotube.getPlatform
 import org.spotube.spotube.core.server.StreamInfo
 import org.spotube.spotube.core.server.StreamRequest
 import org.spotube.spotube.core.server.StreamingUrlRepository
@@ -247,6 +249,7 @@ class DownloadManager(
         }
 
         try {
+            val downloadDir = resolveDownloadDir()
             logger.i { "[Download ${item.id}] resolving stream for '${track.title}'" }
             val settings = settingsRepository.userSettings.value
             val streamInfo = streamingUrlRepository.resolveStreamInfo(
@@ -274,9 +277,6 @@ class DownloadManager(
             logResolvedStream(item, streamInfo)
 
             val filename = buildFilename(item, streamInfo)
-
-            val downloadDir = resolveDownloadDir()
-            fileSystem.createDirectories(downloadDir)
 
             // Some audio providers reject HEAD or advertise ranges but return 200 to Range.
             // A streamed GET needs neither feature, and uses bounded memory on iPhone.
@@ -449,7 +449,34 @@ class DownloadManager(
         }
     }
 
-    private fun resolveDownloadDir(): Path = downloadFolder.value.toPath()
+    private suspend fun resolveDownloadDir(): Path {
+        val selected = downloadFolder.value
+        val resolved = prepareDownloadDirectory(
+            selected = selected,
+            fallback = paths.getUserDownloadsDirPath(),
+            allowFallback = getPlatform().type == PlatformType.IOS
+        ) { folder ->
+            val directory = folder.toPath()
+            fileSystem.createDirectories(directory)
+            // Existing File Provider directories may be readable while writes are denied.
+            // Check before spending time resolving or downloading a complete audio stream.
+            val probe = directory / ".spotube-write-${Random.nextLong().toULong().toString(16)}"
+            try {
+                fileSystem.sink(probe, mustCreate = true).close()
+            } finally {
+                runCatching { fileSystem.delete(probe, mustExist = false) }
+            }
+        }
+        if (resolved != selected) {
+            logger.w { "Saved iOS download folder is not writable; using app Documents/Spotube/Downloads" }
+            val settings = settingsRepository.userSettings.value
+            if (settings.overloadedDownloadFolder == selected) {
+                settingsRepository.updateSettings(settings.copy(overloadedDownloadFolder = resolved))
+                cachedDownloadFolder.value = resolved
+            }
+        }
+        return resolved.toPath()
+    }
 
     private fun buildFilename(downloadItem: DownloadItem, streamInfo: StreamInfo): String {
         val safeTitle = downloadItem.title.sanitizeFilename().take(80)
