@@ -21,19 +21,22 @@ import org.spotube.spotube.core.paths.Paths
 import org.spotube.spotube.modules.settings.SettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
+import org.spotube.spotube.modules.settings.UserSettings
 
 class LocalMediaFoldersConfig(
     private val settingsRepository: SettingsRepository,
     private val paths: Paths) {
     val configuredRootsFlow: Flow<List<String>> = settingsRepository.userSettings.map { settings ->
-        val cacheRoot = if (settings.enableMusicCaching) {
-            listOf(settings.cacheFolder ?: paths.getMusicCacheDirPath())
-        } else {
-            emptyList()
-        }
-        (listOfNotNull(settings.overloadedDownloadFolder) + settings.localMediaFolders + cacheRoot)
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-    }
+        configuredLocalMediaRoots(settings, paths.getUserDownloadsDirPath(),
+            if (settings.enableMusicCaching) paths.getMusicCacheDirPath() else null)
+    }.distinctUntilChanged()
 }
+
+internal fun configuredLocalMediaRoots(settings: UserSettings, defaultDownloads: String, defaultCache: String?): List<String> =
+    (listOf(defaultDownloads) + listOfNotNull(settings.overloadedDownloadFolder) +
+        settings.localMediaFolders +
+        if (settings.enableMusicCaching) listOfNotNull(settings.cacheFolder ?: defaultCache) else emptyList())
+        .map { it.trim().trimEnd('/').ifBlank { if (it.trim() == "/") "/" else "" } }
+        .filter { it.isNotBlank() }
+        .distinct()

@@ -32,6 +32,6 @@ actual val platformModules = module {
     singleOf(::Paths)
     singleOf(::WebViewController)
     single<AudioPlayerInterface> { AudioPlayer(Unit) }
-    single<LocalMediaDiscoveryService> { IosLocalMediaDiscoveryService() }
+    single<LocalMediaDiscoveryService> { IosLocalMediaDiscoveryService(get()) }
     single<ShareService> { IosShareService() }
 }

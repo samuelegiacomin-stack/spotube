@@ -59,7 +59,14 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
     func load(url: String, autoPlay: Bool, startPositionMs: Int64) {
         onMain {
             guard !self.released else { return }
-            guard let mediaUrl = URL(string: url) else {
+            let mediaUrl: URL
+            if url.hasPrefix("/") {
+                // LocalMediaTrack stores a filesystem path. URL(string:) makes a relative URL
+                // and does not correctly escape spaces, # or Unicode filenames for VLC.
+                mediaUrl = URL(fileURLWithPath: url)
+            } else if let parsed = URL(string: url), parsed.scheme != nil {
+                mediaUrl = parsed
+            } else {
                 self.listener?.onError(message: "Invalid URL: \(url)")
                 return
             }

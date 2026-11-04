@@ -92,7 +92,6 @@ class LocalMediaFoldersViewModel(
 
     private fun toUiState(settings: UserSettings, draft: FolderDraft): LocalMediaFoldersUiState {
         val configured = normalizedFolders(settings.localMediaFolders)
-        val hasDownloadFolder = !settings.overloadedDownloadFolder.isNullOrBlank()
         return LocalMediaFoldersUiState(
             isOpen = draft.isOpen,
             configuredCount = configured.size,
@@ -106,10 +105,8 @@ class LocalMediaFoldersViewModel(
             canSave = draft.isOpen && draft.paths != draft.original,
             saveFailed = draft.saveFailed,
             automaticNote = when {
-                hasDownloadFolder && settings.enableMusicCaching -> Res.string.settings_local_media_folders_automatic_both
-                hasDownloadFolder -> Res.string.settings_local_media_folders_automatic_downloads
-                settings.enableMusicCaching -> Res.string.settings_local_media_folders_automatic_cache
-                else -> null
+                settings.enableMusicCaching -> Res.string.settings_local_media_folders_automatic_both
+                else -> Res.string.settings_local_media_folders_automatic_downloads
             }
         )
     }

@@ -29,6 +29,7 @@ import org.spotube.spotube.core.server.StreamingUrlRepository
 import org.spotube.spotube.core.server.urlSummary
 import org.spotube.plugin_interfaces.plugin_apis.audio.StreamProtocol
 import org.spotube.spotube.modules.settings.SettingsRepository
+import org.spotube.spotube.modules.library.local_tracks.media.LocalMediaLibraryCoordinator
 import io.ktor.client.plugins.HttpTimeout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.async
@@ -85,7 +86,8 @@ class DownloadManager(
     private val settingsRepository: SettingsRepository,
     private val paths: Paths,
     private val streamingUrlRepository: StreamingUrlRepository,
-    private val httpClientFactory: HttpClientFactory
+    private val httpClientFactory: HttpClientFactory,
+    private val localMediaLibrary: LocalMediaLibraryCoordinator,
 ) {
     companion object {
         const val MAX_CONCURRENT_DOWNLOADS = 1
@@ -286,6 +288,7 @@ class DownloadManager(
             // Without this Android music players and the Files app's Audio view don't see the
             // file until the next full media scan.
             addToMediaLibrary((downloadDir / filename.toPath()).toString())
+            localMediaLibrary.scheduleRefresh(reason = "download_completed")
             logger.i { "[Download ${item.id}] completed '${item.title}'" }
 
             downloadsMap.update { map ->

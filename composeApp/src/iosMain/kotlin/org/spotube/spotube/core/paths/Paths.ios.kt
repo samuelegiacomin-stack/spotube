@@ -62,6 +62,7 @@ actual class Paths {
         getApplicationDataDirPath()
         getUserDownloadsDirPath()
         getMusicCacheDirPath()
+        ensureFolder("$documentsPath/Spotube/Music")
     }
 
     actual fun getApplicationCacheDirPath(): String {
