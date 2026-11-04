@@ -61,6 +61,7 @@ import okio.SYSTEM
 import okio.buffer
 import okio.use
 import kotlin.time.Clock
+import kotlin.random.Random
 import org.spotube.spotube.core.i18n.getString
 import spotube.composeapp.generated.resources.*
 
@@ -133,7 +134,8 @@ class DownloadManager(
     fun enqueue(track: MetadataTrack) {
         // Atomic de-duplication below also covers repeated taps while a playlist is enqueued.
         val timestamp = Clock.System.now().toEpochMilliseconds()
-        val id = "${track.id}_$timestamp"
+        // Plugin IDs are opaque strings and may contain slashes; never use them as temp paths.
+        val id = "${timestamp}_${Random.nextLong().toULong().toString(16)}"
         val artistNames = track.artists.joinToString(", ") { it.name }
 
         val item = DownloadItem(
