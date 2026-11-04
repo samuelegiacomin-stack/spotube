@@ -6,11 +6,19 @@ on:
       ref:
         description: Branch or commit to verify
         required: true
-        default: ios-background-playback
+        default: codex/ios-artwork-downloads
+      runner:
+        description: macOS runner (Intel avoids ARM capacity shortages)
+        required: true
+        type: choice
+        default: macos-15-intel
+        options:
+          - macos-15-intel
+          - macos-latest
 
 jobs:
   build-ios:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.runner || 'macos-15-intel' }}
     timeout-minutes: 120
     steps:
       - name: Checkout Spotube
@@ -91,9 +99,14 @@ jobs:
           mkdir Payload
           cp -R "$app" Payload/
           zip -qry Spotube-ios-unsigned.ipa Payload
+          git rev-parse HEAD > BUILD-INFO.txt
+          shasum -a 256 Spotube-ios-unsigned.ipa >> BUILD-INFO.txt
+          printf 'Run: %s/%s/actions/runs/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> BUILD-INFO.txt
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
           name: spotube-ios-unsigned
-          path: Spotube-ios-unsigned.ipa
+          path: |
+            Spotube-ios-unsigned.ipa
+            BUILD-INFO.txt
