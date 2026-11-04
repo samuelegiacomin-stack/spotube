@@ -31,6 +31,7 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSURLSession
 import platform.Foundation.NSURLSessionDataTask
 import platform.Foundation.NSHTTPURLResponse
+import platform.Foundation.dataTaskWithURL
 import platform.MediaPlayer.MPMediaItemArtwork
 import platform.MediaPlayer.MPMediaItemPropertyArtwork
 import platform.UIKit.UIImage

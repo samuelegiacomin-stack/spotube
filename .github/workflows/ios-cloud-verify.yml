@@ -30,6 +30,17 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+          cache: gradle
+
+      - name: Cache native toolchains and Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.konan
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ios-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('gradle/libs.versions.toml', '**/Cargo.lock') }}
+          restore-keys: ios-native-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Set up Ruby and CocoaPods
         uses: ruby/setup-ruby@v1
