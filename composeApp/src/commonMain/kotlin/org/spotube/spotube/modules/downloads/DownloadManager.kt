@@ -278,12 +278,9 @@ class DownloadManager(
             val downloadDir = resolveDownloadDir()
             fileSystem.createDirectories(downloadDir)
 
-            val tempDir = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "spotube_downloads".toPath()
-            fileSystem.createDirectories(tempDir)
-
             // Some audio providers reject HEAD or advertise ranges but return 200 to Range.
             // A streamed GET needs neither feature, and uses bounded memory on iPhone.
-            executeSingleConnectionDownload(url, filename, item, tempDir, downloadDir)
+            executeSingleConnectionDownload(url, filename, item, downloadDir)
 
             val finalPath = downloadDir / filename.toPath()
             val writtenBytes = fileSystem.metadataOrNull(finalPath)?.size
@@ -320,8 +317,6 @@ class DownloadManager(
                         errorMessage = failureMessage))
                 } ?: map
             }
-        } finally {
-            cleanupTempFiles(item.id)
         }
     }
 
@@ -329,33 +324,38 @@ class DownloadManager(
         url: String,
         filename: String,
         item: DownloadItem,
-        tempDir: Path,
         downloadDir: Path) {
-        val tempFile = tempDir / "${item.id}.tmp"
+        // Keep staging on the destination filesystem so the final rename is atomic even
+        // for a user-selected folder on another Windows drive.
+        val tempFile = downloadDir / ".${item.id}.part"
+        try {
 
-        httpClient.prepareGet(url).execute { response ->
-            val totalSize = response.contentLength() ?: 0L
-            logger.i {
-                "[Download ${item.id}] GET -> HTTP ${response.status.value} " +
-                    "type=${response.headers[HttpHeaders.ContentType]} length=$totalSize"
-            }
-            if (!response.status.isSuccess()) {
-                logger.w { "[Download ${item.id}] GET got HTTP ${response.status}; failing download" }
-                throw DownloadException(getString(Res.string.downloads_error_http, response.status.value))
-            }
-            rejectVideo(item.id, response.headers[HttpHeaders.ContentType])
-            val channel = response.bodyAsChannel()
+            httpClient.prepareGet(url).execute { response ->
+                val totalSize = response.contentLength() ?: 0L
+                logger.i {
+                    "[Download ${item.id}] GET -> HTTP ${response.status.value} " +
+                        "type=${response.headers[HttpHeaders.ContentType]} length=$totalSize"
+                }
+                if (!response.status.isSuccess()) {
+                    logger.w { "[Download ${item.id}] GET got HTTP ${response.status}; failing download" }
+                    throw DownloadException(getString(Res.string.downloads_error_http, response.status.value))
+                }
+                rejectVideo(item.id, response.headers[HttpHeaders.ContentType])
+                val channel = response.bodyAsChannel()
 
-            fileSystem.sink(tempFile).buffer().use { sink ->
-                copyDownloadBody(channel, sink, totalSize) { count ->
-                    updateProgress(item.id, count, totalSize)
+                fileSystem.sink(tempFile).buffer().use { sink ->
+                    copyDownloadBody(channel, sink, totalSize) { count ->
+                        updateProgress(item.id, count, totalSize)
+                    }
                 }
             }
-        }
 
-        val finalPath = downloadDir / filename.toPath()
-        currentCoroutineContext().ensureActive()
-        fileSystem.atomicMove(tempFile, finalPath)
+            val finalPath = downloadDir / filename.toPath()
+            currentCoroutineContext().ensureActive()
+            fileSystem.atomicMove(tempFile, finalPath)
+        } finally {
+            fileSystem.delete(tempFile, mustExist = false)
+        }
     }
 
     private fun updateProgress(id: String, bytesJustRead: Long, totalSize: Long) {
@@ -450,21 +450,6 @@ class DownloadManager(
     }
 
     private fun resolveDownloadDir(): Path = downloadFolder.value.toPath()
-
-    private fun cleanupTempFiles(id: String) {
-        try {
-            val tempDir = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "spotube_downloads".toPath()
-            if (fileSystem.exists(tempDir)) {
-                fileSystem.list(tempDir).forEach { file ->
-                    if (file.name.startsWith(id)) {
-                        fileSystem.delete(file)
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            logger.w(e) { "Failed to cleanup temp files for $id" }
-        }
-    }
 
     private fun buildFilename(downloadItem: DownloadItem, streamInfo: StreamInfo): String {
         val safeTitle = downloadItem.title.sanitizeFilename().take(80)
