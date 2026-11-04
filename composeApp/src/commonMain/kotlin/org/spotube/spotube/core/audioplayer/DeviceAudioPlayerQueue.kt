@@ -29,7 +29,9 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +67,7 @@ class DeviceAudioPlayerQueue(
     private val collectionHistoryState = MutableStateFlow<List<QueueCollectionEntry>>(emptyList())
 
     private var isRestoringPersistedState = true
+    private val restorationJob: Job
 
     // Eagerly: callers read `.value` (the stream proxy looks up the track it's asked to play,
     // Jam follows the room). With WhileSubscribed, `.value` went stale whenever nothing on
@@ -91,11 +94,18 @@ class DeviceAudioPlayerQueue(
 
     init {
         logger.d { "Initializing DeviceAudioPlayerQueue" }
-        scope.launch {
+        restorationJob = scope.launch {
             logger.d { "Starting restoration of persisted queue state" }
-            restorePersistedState()
-            isRestoringPersistedState = false
-            logger.d { "Persisted queue state restoration completed" }
+            try {
+                restorePersistedState()
+                logger.d { "Persisted queue state restoration completed" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.e(e) { "Could not restore persisted queue state" }
+            } finally {
+                isRestoringPersistedState = false
+            }
         }
 
         scope.launch {
@@ -139,6 +149,7 @@ class DeviceAudioPlayerQueue(
         startPosition: Int,
         collectionEntry: QueueCollectionEntry?) {
         logger.i { "Loading queue with ${entries.size} entries, autoPlay=$autoPlay, startPosition=$startPosition" }
+        stopRestoration()
         val resolved = resolveMediaItems(entries)
         val mediaItems = resolved.map { it.first }
         if (mediaItems.isEmpty()) {
@@ -155,12 +166,13 @@ class DeviceAudioPlayerQueue(
     }
 
     override suspend fun addToQueue(entry: QueueEntry) {
+        restorationJob.join()
         val mediaItem = entry.toMediaItem() ?: run {
             logger.w { "addToQueue: skipping entry with blank url" }
             return
         }
         logger.d { "Adding entry to queue: ${mediaItem.title}" }
-        entryByMediaUrl.update { it + (mediaItem.url to entry) }
+        entryByMediaUrl.update { it + (mediaItem.url to entry.withMediaUrl(mediaItem.url)) }
         audioPlayer.addMediaItem(mediaItem)
         persistQueueStateIfReady()
         logger.d { "Entry added successfully" }
@@ -173,17 +185,14 @@ class DeviceAudioPlayerQueue(
         }
 
         logger.i { "Adding ${entries.size} entries to queue" }
-        val mediaItems = entries.mapNotNull { it.toMediaItem() }
+        restorationJob.join()
+        val resolved = resolveMediaItems(entries)
+        val mediaItems = resolved.map { it.first }
         if (mediaItems.isEmpty()) {
             logger.w { "addAllToQueue: all entries had blank urls, skipping" }
             return
         }
-        val validEntries = entries.zip(mediaItems).map { (entry) ->
-            entry
-        }
-        entryByMediaUrl.update {
-            it + mediaItems.zip(validEntries).associate { (mediaItem, entry) -> mediaItem.url to entry }
-        }
+        entryByMediaUrl.update { it + entriesByUrl(resolved) }
 
         updateCollectionContext(collectionEntry)
 
@@ -202,15 +211,14 @@ class DeviceAudioPlayerQueue(
         }
 
         logger.i { "Adding ${entries.size} entries after current position" }
-        val mediaItems = entries.mapNotNull { it.toMediaItem() }
+        restorationJob.join()
+        val resolved = resolveMediaItems(entries)
+        val mediaItems = resolved.map { it.first }
         if (mediaItems.isEmpty()) {
             logger.w { "addAllAfterCurrent: all entries had blank urls, skipping" }
             return
         }
-        val validEntries = entries.zip(mediaItems).map { (entry) -> entry }
-        entryByMediaUrl.update {
-            it + mediaItems.zip(validEntries).associate { (mediaItem, entry) -> mediaItem.url to entry }
-        }
+        entryByMediaUrl.update { it + entriesByUrl(resolved) }
 
         mediaItems.forEach { mediaItem ->
             audioPlayer.insertMediaItemAtNextIndex(mediaItem)
@@ -290,6 +298,7 @@ class DeviceAudioPlayerQueue(
 
     override suspend fun clear() {
         logger.i { "Clearing queue and collection history" }
+        stopRestoration()
         entryByMediaUrl.value = emptyMap()
         currentCollectionEntryState.value = null
         collectionHistoryState.value = emptyList()
@@ -393,6 +402,13 @@ class DeviceAudioPlayerQueue(
         }
     }
 
+    /** An explicit selection wins over startup restoration, including a restore awaiting the server. */
+    private suspend fun stopRestoration() {
+        restorationJob.cancelAndJoin()
+        // A job cancelled before it starts does not execute its finally block.
+        isRestoringPersistedState = false
+    }
+
     private suspend fun restorePersistedState() {
         val state = repository.getPersistedState()
         if (state == null) {
@@ -429,7 +445,12 @@ class DeviceAudioPlayerQueue(
      * per item was quadratic: ~900k suspending conversions to start a 1353-track playlist.
      */
     private suspend fun resolveMediaItems(entries: List<QueueEntry>): List<Pair<MediaItem, QueueEntry>> =
-        entries.mapNotNull { entry -> entry.toMediaItem()?.let { it to entry } }
+        entries.mapNotNull { entry -> entry.toMediaItem()?.let { it to entry.withMediaUrl(it.url) } }
+
+    private fun QueueEntry.withMediaUrl(mediaUrl: String): QueueEntry = when (this) {
+        is QueueEntry.StreamingTrack -> if (url == mediaUrl) this else copy(url = mediaUrl)
+        is QueueEntry.LocalTrack -> this
+    }
 
     /** First entry wins for a repeated url, as before. */
     private fun entriesByUrl(resolved: List<Pair<MediaItem, QueueEntry>>): Map<String, QueueEntry> = buildMap {

@@ -8,6 +8,7 @@ import org.spotube.plugin_interfaces.plugin_apis.metadata.artist.MetadataArtist
 import org.spotube.plugin_interfaces.plugin_apis.metadata.common.Thumbnail
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
@@ -52,9 +53,87 @@ class DeviceAudioPlayerQueueTest {
     }
 
     private fun createQueue(endpoint: org.spotube.spotube.core.server.PlaybackProxyEndpoint =
-        org.spotube.spotube.core.server.PlaybackProxyEndpoint().apply { publish(14769) }): DeviceAudioPlayerQueue {
-        return DeviceAudioPlayerQueue(fakePlayer, fakeSettings, fakeRepo, fakePlugin, fakeBlacklist,
+        org.spotube.spotube.core.server.PlaybackProxyEndpoint().apply { publish(14769) },
+        repository: QueueStateRepository = fakeRepo): DeviceAudioPlayerQueue {
+        return DeviceAudioPlayerQueue(fakePlayer, fakeSettings, repository, fakePlugin, fakeBlacklist,
             endpoint)
+    }
+
+    @Test
+    fun `mixed batch keeps streaming metadata when blank local entries are skipped`() = runTest {
+        val queue = createQueue()
+        queue.addAllToQueue(listOf(localEntry(url = ""), streamingEntry("t1")))
+
+        val entry = queue.getQueue().single() as? QueueEntry.StreamingTrack
+        assertNotNull(entry)
+        assertEquals("t1", entry.track.id)
+        assertEquals("t1", queue.findStreamingTrack("t1")?.track?.id)
+    }
+
+    @Test
+    fun `mixed insert after current keeps streaming metadata`() = runTest {
+        val queue = createQueue()
+        queue.load(listOf(streamingEntry("current")))
+        queue.addAllAfterCurrent(listOf(localEntry(url = ""), streamingEntry("next")))
+
+        assertEquals("next", queue.findStreamingTrack("next")?.track?.id)
+        assertEquals(listOf("current", "next"), queue.getQueue().map {
+            (it as QueueEntry.StreamingTrack).track.id
+        })
+    }
+
+    @Test
+    fun `rebound streaming entries expose the actual media URL`() = runTest {
+        val endpoint = org.spotube.spotube.core.server.PlaybackProxyEndpoint().apply { publish(24001) }
+        val queue = createQueue(endpoint)
+        queue.load(listOf(streamingEntry("loaded")))
+        queue.addToQueue(streamingEntry("added"))
+        queue.addAllToQueue(listOf(streamingEntry("batch")))
+        queue.addAllAfterCurrent(listOf(streamingEntry("inserted")))
+
+        val entries = queue.getQueue()
+        assertEquals(fakePlayer.playlistFlow.value.map { it.url }, entries.map { it.url })
+        entries.forEach { assertTrue(it.url.startsWith("http://127.0.0.1:24001/stream/")) }
+    }
+
+    @Test
+    fun `explicit load cancels delayed restoration before applying the new playlist`() = runTest {
+        checkExplicitActionDuringRestore(clear = false)
+    }
+
+    @Test
+    fun `clear cancels delayed restoration so the old queue cannot reappear`() = runTest {
+        checkExplicitActionDuringRestore(clear = true)
+    }
+
+    private suspend fun checkExplicitActionDuringRestore(clear: Boolean) {
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val finished = CompletableDeferred<Unit>()
+        val repository = object : QueueStateRepository {
+            override suspend fun getPersistedState(): PersistedQueueState? {
+                started.complete(Unit)
+                try {
+                    release.await()
+                    return PersistedQueueState(listOf(streamingEntry("old")), 0)
+                } finally {
+                    finished.complete(Unit)
+                }
+            }
+            override suspend fun saveState(state: PersistedQueueState) = fakeRepo.saveState(state)
+            override suspend fun clearState() = fakeRepo.clearState()
+        }
+        val queue = createQueue(repository = repository)
+        try {
+            withContext(Dispatchers.Default) { withTimeout(5_000) { started.await() } }
+            if (clear) queue.clear() else queue.load(listOf(streamingEntry("new")))
+            assertTrue(finished.isCompleted, "Explicit actions must finish cancelling restoration first")
+            assertEquals(if (clear) emptyList() else listOf("new"), queue.getQueue().map {
+                (it as QueueEntry.StreamingTrack).track.id
+            })
+        } finally {
+            release.complete(Unit)
+        }
     }
 
     private fun streamingTrack(
