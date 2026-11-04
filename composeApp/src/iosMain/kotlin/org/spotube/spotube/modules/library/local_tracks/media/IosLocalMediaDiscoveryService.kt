@@ -28,6 +28,7 @@ import org.jetbrains.skia.Image
 import org.jetbrains.skia.MipmapMode
 import org.jetbrains.skia.Rect
 import org.jetbrains.skia.Surface
+import org.jetbrains.skia.impl.use
 import org.spotube.spotube.core.paths.Paths
 
 class IosLocalMediaDiscoveryService(private val paths: Paths) : LocalMediaDiscoveryService {

@@ -40,8 +40,9 @@ jobs:
           java-version: '21'
           cache: gradle
 
-      - name: Cache native toolchains and Rust dependencies
-        uses: actions/cache@v4
+      - name: Restore native toolchains and Rust dependencies
+        id: native-cache
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.konan
@@ -67,11 +68,22 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew publishToMavenLocal
+          ./gradlew --stop
 
       - name: Compile Kotlin/Native iOS
         run: |
           chmod +x gradlew
           ./gradlew :composeApp:compileKotlinIosSimulatorArm64
+
+      - name: Save native toolchains even after a compile failure
+        if: always() && !cancelled() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.konan
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Install CocoaPods dependencies
         run: |
