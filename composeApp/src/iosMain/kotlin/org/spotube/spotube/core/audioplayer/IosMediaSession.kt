@@ -27,6 +27,15 @@ import platform.AVFAudio.setActive
 import platform.Foundation.NSNotificationCenter
 import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
+import platform.Foundation.NSURL
+import platform.Foundation.NSURLSession
+import platform.Foundation.NSURLSessionDataTask
+import platform.Foundation.NSHTTPURLResponse
+import platform.MediaPlayer.MPMediaItemArtwork
+import platform.MediaPlayer.MPMediaItemPropertyArtwork
+import platform.UIKit.UIImage
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_get_main_queue
 import platform.MediaPlayer.MPChangePlaybackPositionCommandEvent
 import platform.MediaPlayer.MPMediaItemPropertyAlbumTitle
 import platform.MediaPlayer.MPMediaItemPropertyArtist
@@ -46,6 +55,10 @@ internal class IosMediaSession {
     private val remoteCommandCenter = MPRemoteCommandCenter.sharedCommandCenter()
 
     private var configured = false
+    private var artworkUrl: String? = null
+    private var artworkTask: NSURLSessionDataTask? = null
+    private var artwork: MPMediaItemArtwork? = null
+    private val artworkCache = linkedMapOf<String, MPMediaItemArtwork>()
     private val notificationCenter = NSNotificationCenter.defaultCenter()
     private val notificationTokens = mutableListOf<Any>()
     private val remoteCommandTokens = mutableListOf<Pair<MPRemoteCommand, Any>>()
@@ -94,12 +107,24 @@ internal class IosMediaSession {
         durationSeconds: Double,
         isPlaying: Boolean
     ) {
+        // Player events also arrive from Kotlin worker coroutines. Serialize native state on main.
+        dispatch_async(dispatch_get_main_queue()) {
+            updateOnMain(item, positionSeconds, durationSeconds, isPlaying)
+        }
+    }
+
+    private fun updateOnMain(
+        item: MediaItem?, positionSeconds: Double, durationSeconds: Double, isPlaying: Boolean
+    ) {
         if (item == null) {
+            resetArtwork()
             nowPlayingInfoCenter.nowPlayingInfo = null
             return
         }
 
+        updateArtwork(item.coverURL)
         val info = buildMap<Any?, Any?> {
+            artwork?.let { put(MPMediaItemPropertyArtwork, it) }
             put(MPMediaItemPropertyTitle, item.title)
             put(MPMediaItemPropertyArtist, item.artist)
             item.album.takeIf { it.isNotBlank() }?.let {
@@ -117,6 +142,12 @@ internal class IosMediaSession {
     }
 
     fun clear() {
+        dispatch_async(dispatch_get_main_queue()) { clearOnMain() }
+    }
+
+    private fun clearOnMain() {
+        resetArtwork()
+        artworkCache.clear()
         nowPlayingInfoCenter.nowPlayingInfo = null
         notificationTokens.forEach { notificationCenter.removeObserver(it) }
         notificationTokens.clear()
@@ -128,6 +159,41 @@ internal class IosMediaSession {
         onSeek = null
         onNext = null
         onPrevious = null
+    }
+
+    private fun resetArtwork() {
+        artworkTask?.cancel()
+        artworkTask = null
+        artworkUrl = null
+        artwork = null
+    }
+
+    private fun updateArtwork(url: String) {
+        // Never fetch or decode the cover on each playback-position event.
+        if (artworkUrl == url) return
+        resetArtwork()
+        artworkUrl = url
+        artwork = artworkCache[url]
+        if (artwork != null || url.isBlank()) return
+        val nativeUrl = NSURL.URLWithString(url) ?: return
+        artworkTask = NSURLSession.sharedSession.dataTaskWithURL(nativeUrl) { data, response, error ->
+            val status = (response as? NSHTTPURLResponse)?.statusCode ?: 200L
+            if (error != null || data == null || data.length == 0UL ||
+                data.length > 8_000_000UL || status !in 200L..299L) return@dataTaskWithURL
+            val image = UIImage(data = data) ?: return@dataTaskWithURL
+            dispatch_async(dispatch_get_main_queue()) {
+                // A late response must never replace the cover of a newer track.
+                if (artworkUrl != url) return@dispatch_async
+                val loaded = MPMediaItemArtwork(boundsSize = image.size, requestHandler = { image })
+                artwork = loaded
+                artworkTask = null
+                artworkCache[url] = loaded
+                if (artworkCache.size > 4) artworkCache.remove(artworkCache.keys.first())
+                val info = nowPlayingInfoCenter.nowPlayingInfo?.toMutableMap() ?: return@dispatch_async
+                info[MPMediaItemPropertyArtwork] = loaded
+                nowPlayingInfoCenter.nowPlayingInfo = info
+            }
+        }.also { it.resume() }
     }
 
     private fun registerAudioSessionNotifications() {

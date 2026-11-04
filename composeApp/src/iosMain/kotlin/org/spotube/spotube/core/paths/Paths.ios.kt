@@ -20,7 +20,10 @@ package org.spotube.spotube.core.paths
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSCachesDirectory
 import platform.Foundation.NSDocumentDirectory
-import platform.Foundation.NSDownloadsDirectory
+import platform.Foundation.NSApplicationSupportDirectory
+import okio.FileSystem
+import okio.Path.Companion.toPath
+import okio.SYSTEM
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSURL
 import platform.Foundation.NSUserDomainMask
@@ -28,6 +31,39 @@ import platform.Foundation.NSUserDomainMask
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 @OptIn(ExperimentalForeignApi::class)
 actual class Paths {
+    private val documentsPath: String by lazy {
+        requireNotNull(NSFileManager.defaultManager.URLForDirectory(
+            directory = NSDocumentDirectory, inDomain = NSUserDomainMask,
+            appropriateForURL = null, create = true, error = null)?.path)
+    }
+
+    private val privateDataPath: String by lazy {
+        val root = requireNotNull(NSFileManager.defaultManager.URLForDirectory(
+            directory = NSApplicationSupportDirectory, inDomain = NSUserDomainMask,
+            appropriateForURL = null, create = true, error = null)?.path)
+        val target = "$root/Spotube".toPath()
+        val fs = FileSystem.SYSTEM
+        fs.createDirectories(target)
+        // Upgrade before any DataStore/plugin is opened. Move only Spotube's internal data,
+        // leaving downloaded music and other user documents in place.
+        fs.list(documentsPath.toPath()).filter {
+            it.name == "plugins" ||
+                (it.name.startsWith("spotube") && it.name.endsWith(".preferences_pb"))
+        }.forEach { source ->
+            val destination = target / source.name
+            check(!fs.exists(destination)) { "Conflicting iOS data migration: ${source.name}" }
+            fs.atomicMove(source, destination)
+        }
+        target.toString()
+    }
+
+    /** Called before Koin opens databases; Files gets both folders on the first launch. */
+    fun prepareUserFolders() {
+        getApplicationDataDirPath()
+        getUserDownloadsDirPath()
+        getMusicCacheDirPath()
+    }
+
     actual fun getApplicationCacheDirPath(): String {
         // Return ios cache dir
         val cacheDirectory: NSURL? = NSFileManager.defaultManager.URLForDirectory(
@@ -41,29 +77,21 @@ actual class Paths {
     }
 
     actual fun getApplicationDataDirPath(): String {
-        // Return ios document dir
-        val documentDirectory: NSURL? = NSFileManager.defaultManager.URLForDirectory(
-            directory = NSDocumentDirectory,
-            inDomain = NSUserDomainMask,
-            appropriateForURL = null,
-            create = false,
-            error = null)
-
-        return requireNotNull(documentDirectory?.path)
+        return privateDataPath
     }
 
     actual fun getUserDownloadsDirPath(): String {
-        val downloadsDirectory: NSURL? = NSFileManager.defaultManager.URLForDirectory(
-            directory = NSDownloadsDirectory,
-            inDomain = NSUserDomainMask,
-            appropriateForURL = null,
-            create = false,
-            error = null)
-
-        return (downloadsDirectory?.path ?: getApplicationDataDirPath()) + "/Spotube"
+        return ensureFolder("$documentsPath/Spotube/Downloads")
     }
 
     actual fun getMusicCacheDirPath(): String {
-        return getApplicationCacheDirPath() + "/music_cache"
+        // The user requested an accessible audio cache in Files. General transient caches
+        // remain in Library/Caches; only the managed music cache is user-visible.
+        return ensureFolder("$documentsPath/Spotube/Cache")
+    }
+
+    private fun ensureFolder(path: String): String {
+        FileSystem.SYSTEM.createDirectories(path.toPath())
+        return path
     }
 }

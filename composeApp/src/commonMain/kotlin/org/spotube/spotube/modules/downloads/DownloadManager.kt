@@ -29,22 +29,20 @@ import org.spotube.plugin_interfaces.plugin_apis.audio.StreamProtocol
 import org.spotube.spotube.modules.settings.SettingsRepository
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
-import io.ktor.client.request.head
-import io.ktor.client.request.headers
+import io.ktor.client.request.prepareGet
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.http.HttpHeaders
-import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentLength
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readRemaining
+import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -92,13 +90,12 @@ class DownloadManager(
     private val httpClientFactory: HttpClientFactory
 ) {
     companion object {
-        const val MAX_CONCURRENT_DOWNLOADS = 4
-        private const val SEGMENT_COUNT = 4
+        const val MAX_CONCURRENT_DOWNLOADS = 1
         private const val CHUNK_SIZE = 256 * 1024
     }
 
     private val logger = Logger.withTag("DownloadManager")
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val fileSystem = FileSystem.SYSTEM
     private val queueMutex = Mutex()
 
@@ -113,7 +110,7 @@ class DownloadManager(
     private val downloadsMap = MutableStateFlow<Map<String, DownloadItem>>(emptyMap())
 
     val downloadsFlow: StateFlow<List<DownloadItem>> = downloadsMap
-        .map { map -> map.values.sortedByDescending { it.id } }
+        .map { map -> map.values.toList() }
         .stateIn(scope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val cachedDownloadFolder = MutableStateFlow<String?>(null)
@@ -134,6 +131,7 @@ class DownloadManager(
     }
 
     fun enqueue(track: MetadataTrack) {
+        // Atomic de-duplication below also covers repeated taps while a playlist is enqueued.
         val timestamp = Clock.System.now().toEpochMilliseconds()
         val id = "${track.id}_$timestamp"
         val artistNames = track.artists.joinToString(", ") { it.name }
@@ -145,7 +143,12 @@ class DownloadManager(
             album = track.album?.title,
             track = track)
 
-        downloadsMap.update { it + (id to item) }
+        downloadsMap.update { current ->
+            if (current.values.any { it.track?.id == track.id &&
+                    (it.status == DownloadStatus.Queued || it.status == DownloadStatus.Downloading ||
+                        it.status == DownloadStatus.Completed) }) current
+            else current + (id to item)
+        }
         val settings = settingsRepository.userSettings.value
         logger.i {
             "[Download $id] enqueued '${track.title}' by $artistNames (track=${track.id}) " +
@@ -157,28 +160,32 @@ class DownloadManager(
     }
 
     fun cancel(id: String) {
-        activeJobs[id]?.cancel()
-        activeJobs.remove(id)
-        downloadsMap.update { map ->
-            map[id]?.let { item ->
-                map + (id to item.copy(status = DownloadStatus.Cancelled))
-            } ?: map
+        scope.launch {
+            queueMutex.withLock {
+                downloadsMap.update { map ->
+                    map[id]?.let { map + (id to it.copy(status = DownloadStatus.Cancelled)) } ?: map
+                }
+                activeJobs[id]?.cancel()
+            }
+            processQueue()
         }
-        cleanupTempFiles(id)
     }
 
     fun retry(id: String) {
-        val item = downloadsMap.value[id] ?: return
-        if (item.status !is DownloadStatus.Failed && item.status != DownloadStatus.Cancelled) return
-
-        downloadsMap.update { map ->
-            map + (id to item.copy(
-                status = DownloadStatus.Queued,
-                progress = 0f,
-                downloadedBytes = 0L,
-                errorMessage = null))
+        scope.launch {
+            queueMutex.withLock {
+                val item = downloadsMap.value[id] ?: return@withLock
+                if (id in activeJobs ||
+                    (item.status !is DownloadStatus.Failed && item.status != DownloadStatus.Cancelled)) {
+                    return@withLock
+                }
+                downloadsMap.update { map ->
+                    map + (id to item.copy(status = DownloadStatus.Queued, progress = 0f,
+                        downloadedBytes = 0L, errorMessage = null))
+                }
+            }
+            processQueue()
         }
-        scope.launch { processQueue() }
     }
 
     fun remove(id: String) {
@@ -195,7 +202,7 @@ class DownloadManager(
     private suspend fun processQueue() {
         queueMutex.withLock {
             while (true) {
-                val activeCount = activeJobs.values.count { it.isActive }
+                val activeCount = activeJobs.size
                 if (activeCount >= MAX_CONCURRENT_DOWNLOADS) break
 
                 val nextItem =
@@ -207,8 +214,9 @@ class DownloadManager(
                     map + (id to nextItem.copy(status = DownloadStatus.Downloading))
                 }
 
-                val job = scope.launch { executeDownload(nextItem) }
+                val job = scope.launch(start = CoroutineStart.LAZY) { executeDownload(nextItem) }
                 activeJobs[id] = job
+                job.start()
             }
         }
     }
@@ -262,22 +270,13 @@ class DownloadManager(
             val tempDir = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "spotube_downloads".toPath()
             fileSystem.createDirectories(tempDir)
 
-            val (totalSize, supportsRanges) = probeUrl(item.id, url)
-
-            if (totalSize > 0 && supportsRanges) {
-                logger.i { "[Download ${item.id}] multi-segment download ($SEGMENT_COUNT segments, $totalSize bytes) -> ${downloadDir / filename}" }
-                executeMultiSegmentDownload(url, filename, item, tempDir, downloadDir, totalSize)
-            } else {
-                logger.i { "[Download ${item.id}] single-connection download (size=$totalSize ranges=$supportsRanges) -> ${downloadDir / filename}" }
-                executeSingleConnectionDownload(url, filename, item, tempDir, downloadDir)
-            }
+            // Some audio providers reject HEAD or advertise ranges but return 200 to Range.
+            // A streamed GET needs neither feature, and uses bounded memory on iPhone.
+            executeSingleConnectionDownload(url, filename, item, tempDir, downloadDir)
 
             val finalPath = downloadDir / filename.toPath()
             val writtenBytes = fileSystem.metadataOrNull(finalPath)?.size
-            logger.i { "[Download ${item.id}] wrote $finalPath ($writtenBytes bytes, expected $totalSize)" }
-            if (totalSize > 0 && writtenBytes != null && writtenBytes != totalSize) {
-                logger.w { "[Download ${item.id}] SIZE MISMATCH: wrote $writtenBytes bytes, server reported $totalSize" }
-            }
+            logger.i { "[Download ${item.id}] wrote $finalPath ($writtenBytes bytes)" }
 
             applyMetadata(item, filename, downloadDir)
             // Without this Android music players and the Files app's Audio view don't see the
@@ -309,84 +308,12 @@ class DownloadManager(
                 } ?: map
             }
         } finally {
-            activeJobs.remove(item.id)
-            processQueue()
-        }
-    }
-
-    private suspend fun executeMultiSegmentDownload(
-        url: String,
-        filename: String,
-        item: DownloadItem,
-        tempDir: Path,
-        downloadDir: Path,
-        totalSize: Long) {
-        val segmentSize = totalSize / SEGMENT_COUNT
-        val segments = (0 until SEGMENT_COUNT).map { i ->
-            val start = i * segmentSize
-            val end = if (i == SEGMENT_COUNT - 1) totalSize - 1 else (i + 1) * segmentSize - 1
-            Segment(index = i, start = start, end = end)
-        }
-
-        val segmentFiles = segments.map { segment ->
-            tempDir / "${item.id}_seg${segment.index}.tmp"
-        }
-
-        coroutineScope {
-            segments.mapIndexed { index, segment ->
-                async {
-                    downloadSegment(url, item, segment, segmentFiles[index], totalSize)
-                }
-            }.awaitAll()
-        }
-
-        val finalPath = downloadDir / filename.toPath()
-        fileSystem.sink(finalPath).buffer().use { sink ->
-            for (segmentFile in segmentFiles) {
-                fileSystem.source(segmentFile).buffer().use { source ->
-                    sink.writeAll(source)
-                }
+            cleanupTempFiles(item.id)
+            // Cleanup must run even when the download job was cancelled.
+            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                queueMutex.withLock { activeJobs.remove(item.id) }
+                processQueue()
             }
-        }
-
-        segmentFiles.forEach { fileSystem.delete(it) }
-    }
-
-    private suspend fun downloadSegment(
-        url: String,
-        item: DownloadItem,
-        segment: Segment,
-        outputPath: Path,
-        totalSize: Long) {
-        val response = httpClient.get(url) {
-            headers {
-                append(HttpHeaders.Range, "bytes=${segment.start}-${segment.end}")
-            }
-        }
-        logger.d {
-            "[Download ${item.id}] segment ${segment.index} bytes=${segment.start}-${segment.end} -> " +
-                "HTTP ${response.status.value} type=${response.headers[HttpHeaders.ContentType]} " +
-                "range=${response.headers[HttpHeaders.ContentRange]}"
-        }
-        // expectSuccess = false, so without these checks an error page, or the whole file once per
-        // segment (a 200 to a range request), would be written into the "audio" file.
-        if (!response.status.isSuccess()) {
-            logger.w { "[Download ${item.id}] segment ${segment.index} got HTTP ${response.status}; failing download" }
-            throw DownloadException(getString(Res.string.downloads_error_http, response.status.value))
-        }
-        if (response.status != HttpStatusCode.PartialContent) {
-            logger.w { "[Download ${item.id}] segment ${segment.index} got ${response.status} instead of 206; range ignored" }
-            throw DownloadException(getString(Res.string.downloads_error_range_ignored))
-        }
-        val channel = response.bodyAsChannel()
-
-        fileSystem.sink(outputPath).buffer().use { sink ->
-            val packet = channel.readRemaining()
-            val bytes = packet.readByteArray()
-            packet.close()
-            sink.write(bytes)
-
-            updateProgress(item.id, bytes.size.toLong(), totalSize)
         }
     }
 
@@ -398,31 +325,38 @@ class DownloadManager(
         downloadDir: Path) {
         val tempFile = tempDir / "${item.id}.tmp"
 
-        val response = httpClient.get(url)
-        val totalSize = response.contentLength() ?: 0L
-        logger.i {
-            "[Download ${item.id}] GET -> HTTP ${response.status.value} " +
-                "type=${response.headers[HttpHeaders.ContentType]} length=$totalSize"
-        }
-        if (!response.status.isSuccess()) {
-            logger.w { "[Download ${item.id}] GET got HTTP ${response.status}; failing download" }
-            throw DownloadException(getString(Res.string.downloads_error_http, response.status.value))
-        }
-        rejectVideo(item.id, response.headers[HttpHeaders.ContentType])
-        val channel = response.bodyAsChannel()
+        httpClient.prepareGet(url).execute { response ->
+            val totalSize = response.contentLength() ?: 0L
+            logger.i {
+                "[Download ${item.id}] GET -> HTTP ${response.status.value} " +
+                    "type=${response.headers[HttpHeaders.ContentType]} length=$totalSize"
+            }
+            if (!response.status.isSuccess()) {
+                logger.w { "[Download ${item.id}] GET got HTTP ${response.status}; failing download" }
+                throw DownloadException(getString(Res.string.downloads_error_http, response.status.value))
+            }
+            rejectVideo(item.id, response.headers[HttpHeaders.ContentType])
+            val channel = response.bodyAsChannel()
 
-        fileSystem.sink(tempFile).buffer().use { sink ->
-            val packet = channel.readRemaining()
-            val bytes = packet.readByteArray()
-            packet.close()
-            sink.write(bytes)
-
-            updateProgress(item.id, bytes.size.toLong(), totalSize)
+            fileSystem.sink(tempFile).buffer().use { sink ->
+                val bytes = ByteArray(CHUNK_SIZE)
+                var received = 0L
+                while (true) {
+                    val count = channel.readAvailable(bytes, 0, bytes.size)
+                    if (count < 0) break
+                    if (count == 0) continue
+                    sink.write(bytes, 0, count)
+                    received += count
+                    updateProgress(item.id, count.toLong(), totalSize)
+                }
+                check(received > 0 && (totalSize <= 0 || received == totalSize)) {
+                    getString(Res.string.downloads_error_range_ignored)
+                }
+            }
         }
 
         val finalPath = downloadDir / filename.toPath()
-        fileSystem.copy(tempFile, finalPath)
-        fileSystem.delete(tempFile)
+        fileSystem.atomicMove(tempFile, finalPath)
     }
 
     private fun updateProgress(id: String, bytesJustRead: Long, totalSize: Long) {
@@ -430,34 +364,13 @@ class DownloadManager(
             map[id]?.let { current ->
                 val newDownloaded = current.downloadedBytes + bytesJustRead
                 val progress = if (totalSize > 0) {
-                    (newDownloaded.toFloat() / totalSize.toFloat()).coerceIn(0f, 1f)
+                    (newDownloaded.toFloat() / totalSize.toFloat()).coerceIn(0f, 0.99f)
                 } else 0f
                 map + (id to current.copy(
                     progress = progress,
                     downloadedBytes = newDownloaded,
                     totalBytes = totalSize))
             } ?: map
-        }
-    }
-
-    private suspend fun probeUrl(id: String, url: String): Pair<Long, Boolean> {
-        return try {
-            val response = httpClient.head(url)
-            val contentLength = response.contentLength() ?: 0L
-            val acceptRanges = response.headers[HttpHeaders.AcceptRanges]
-            val supportsRanges = acceptRanges?.equals("bytes", ignoreCase = true) == true
-            val contentType = response.headers[HttpHeaders.ContentType]
-            logger.i {
-                "[Download $id] HEAD -> HTTP ${response.status.value} type=$contentType " +
-                    "length=$contentLength acceptRanges=$acceptRanges"
-            }
-            rejectVideo(id, contentType)
-            Pair(contentLength, supportsRanges)
-        } catch (e: DownloadException) {
-            throw e
-        } catch (e: Exception) {
-            logger.w(e) { "[Download $id] HEAD request failed, falling back to single connection" }
-            Pair(0L, false)
         }
     }
 
@@ -566,7 +479,6 @@ class DownloadManager(
         return this.replace(Regex("[^a-zA-Z0-9.\\-_' ]"), "_").take(200)
     }
 
-    private data class Segment(val index: Int, val start: Long, val end: Long)
 }
 
 /** A download failure whose [message] is already localized and safe to show the user. */
