@@ -38,6 +38,7 @@ import org.spotube.spotube.modules.downloads.DownloadManager
 import org.spotube.spotube.modules.library.LibraryRepository
 import org.spotube.spotube.modules.saved_tracks.SavedTracksRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -111,6 +112,10 @@ class PlaylistViewModel(
 
     private val _state = MutableStateFlow<PlaylistScreenState>(PlaylistScreenState.Loading)
     val uiState: StateFlow<PlaylistScreenState> = _state.asStateFlow()
+    private val _isDownloadLoading = MutableStateFlow(false)
+    val isDownloadLoading = _isDownloadLoading.asStateFlow()
+    private val _downloadError = MutableStateFlow<String?>(null)
+    val downloadError = _downloadError.asStateFlow()
 
     /** Loading flags for this screen's play / shuffle / add-to-queue buttons. */
     val playbackUiState: StateFlow<CollectionPlaybackUiState> = remotePlaybackController
@@ -387,6 +392,34 @@ class PlaylistViewModel(
 
     fun downloadTracks(tracks: List<MetadataTrack>) {
         tracks.forEach { track -> downloadManager.enqueue(track) }
+    }
+
+    fun downloadPlaylist() {
+        if (_isDownloadLoading.value) return
+        _isDownloadLoading.value = true
+        _downloadError.value = null
+        viewModelScope.launch {
+            try {
+                // Fetch every page, including tracks that have not been scrolled into view.
+                val tracks = linkedMapOf<String, MetadataTrack>()
+                val visited = mutableSetOf<PaginationStrategy?>()
+                var pagination: PaginationStrategy? = null
+                do {
+                    check(visited.add(pagination)) { "Repeated playlist pagination" }
+                    val page = checkNotNull(repository.getPlaylistTracks(playlistId, pagination))
+                    page.items.forEach { track -> tracks.getOrPut(track.id) { track } }
+                    pagination = page.nextPagination
+                } while (pagination != null)
+                downloadTracks(tracks.values.toList())
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                logger.e(e) { "Failed to enqueue playlist downloads" }
+                _downloadError.value = getString(Res.string.common_unknown_error)
+            } finally {
+                _isDownloadLoading.value = false
+            }
+        }
     }
 
     fun isTrackBlacklisted(track: MetadataTrack): Boolean {

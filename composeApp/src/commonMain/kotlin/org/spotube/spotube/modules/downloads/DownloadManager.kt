@@ -35,8 +35,9 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentLength
 import io.ktor.http.isSuccess
 import io.ktor.utils.io.readRemaining
-import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -91,7 +92,6 @@ class DownloadManager(
 ) {
     companion object {
         const val MAX_CONCURRENT_DOWNLOADS = 1
-        private const val CHUNK_SIZE = 256 * 1024
     }
 
     private val logger = Logger.withTag("DownloadManager")
@@ -216,6 +216,15 @@ class DownloadManager(
 
                 val job = scope.launch(start = CoroutineStart.LAZY) { executeDownload(nextItem) }
                 activeJobs[id] = job
+                job.invokeOnCompletion {
+                    // Also handles cancellation before the coroutine body ever starts.
+                    scope.launch {
+                        queueMutex.withLock {
+                            if (activeJobs[id] === job) activeJobs.remove(id)
+                        }
+                        processQueue()
+                    }
+                }
                 job.start()
             }
         }
@@ -299,21 +308,18 @@ class DownloadManager(
             throw e
         } catch (e: Exception) {
             logger.e(e) { "[Download ${item.id}] FAILED '${item.title}': ${e.message}" }
-            val failureMessage = e.message ?: getString(Res.string.common_unknown_error)
+            val failureMessage = if (e is IncompleteDownloadException) {
+                getString(Res.string.downloads_error_range_ignored)
+            } else e.message ?: getString(Res.string.common_unknown_error)
             downloadsMap.update { map ->
                 map[item.id]?.let {
                     map + (item.id to it.copy(
                         status = DownloadStatus.Failed(failureMessage),
-                        errorMessage = e.message))
+                        errorMessage = failureMessage))
                 } ?: map
             }
         } finally {
             cleanupTempFiles(item.id)
-            // Cleanup must run even when the download job was cancelled.
-            kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
-                queueMutex.withLock { activeJobs.remove(item.id) }
-                processQueue()
-            }
         }
     }
 
@@ -339,23 +345,14 @@ class DownloadManager(
             val channel = response.bodyAsChannel()
 
             fileSystem.sink(tempFile).buffer().use { sink ->
-                val bytes = ByteArray(CHUNK_SIZE)
-                var received = 0L
-                while (true) {
-                    val count = channel.readAvailable(bytes, 0, bytes.size)
-                    if (count < 0) break
-                    if (count == 0) continue
-                    sink.write(bytes, 0, count)
-                    received += count
-                    updateProgress(item.id, count.toLong(), totalSize)
-                }
-                check(received > 0 && (totalSize <= 0 || received == totalSize)) {
-                    getString(Res.string.downloads_error_range_ignored)
+                copyDownloadBody(channel, sink, totalSize) { count ->
+                    updateProgress(item.id, count, totalSize)
                 }
             }
         }
 
         val finalPath = downloadDir / filename.toPath()
+        currentCoroutineContext().ensureActive()
         fileSystem.atomicMove(tempFile, finalPath)
     }
 
@@ -427,6 +424,8 @@ class DownloadManager(
             } else {
                 null
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.w(e) { "Failed to download cover art for ${item.title}" }
             null
@@ -441,6 +440,8 @@ class DownloadManager(
                 trackNumber = track.trackNumber,
                 discNumber = track.discNumber,
                 coverBytes = coverBytes)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             logger.w(e) { "[Download ${item.id}] failed to write audio metadata for ${item.title}" }
         }
@@ -464,8 +465,8 @@ class DownloadManager(
     }
 
     private fun buildFilename(downloadItem: DownloadItem, streamInfo: StreamInfo): String {
-        val safeTitle = downloadItem.title.sanitizeFilename()
-        val safeArtist = downloadItem.artists.sanitizeFilename()
+        val safeTitle = downloadItem.title.sanitizeFilename().take(80)
+        val safeArtist = downloadItem.artists.sanitizeFilename().take(80)
         val extension = fileExtension(streamInfo)
         return "$safeArtist - $safeTitle.$extension"
     }

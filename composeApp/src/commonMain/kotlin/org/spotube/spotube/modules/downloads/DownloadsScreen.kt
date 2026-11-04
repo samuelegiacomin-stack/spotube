@@ -3,7 +3,9 @@
  */
 package org.spotube.spotube.modules.downloads
 
-import org.spotube.millennium.composables.MillenniumStripedProgress
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -232,11 +234,19 @@ internal fun DownloadListRow(
                 },
                 maxLines = 1, overflow = TextOverflow.Ellipsis
             )
-            if (item.status == DownloadStatus.Downloading) MillenniumStripedProgress(
-                progress = item.progress,
-                modifier = Modifier.fillMaxWidth(),
-                height = 6.dp
-            )
+        }
+        if (item.status == DownloadStatus.Downloading || item.status == DownloadStatus.Completed) {
+            val progressColor = AppTheme.colors.primary
+            val trackColor = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.2f)
+            Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.fillMaxSize().padding(3.dp)) {
+                    val stroke = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                    drawArc(trackColor, -90f, 360f, false, style = stroke)
+                    drawArc(progressColor, -90f, item.progress * 360f, false, style = stroke)
+                }
+                Text(stringResource(Res.string.downloads_progress_percent, item.percent),
+                    style = AppTheme.typography.labelSmall)
+            }
         }
         MillenniumIconButton(
             onClick = when (item.action) {

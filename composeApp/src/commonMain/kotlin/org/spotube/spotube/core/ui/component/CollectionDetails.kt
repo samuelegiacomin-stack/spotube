@@ -63,6 +63,7 @@ import org.spotube.spotube.resources.iconsax.IconsaxHeart2
 import org.spotube.spotube.resources.iconsax.IconsaxPauseCircle
 import org.spotube.spotube.resources.iconsax.IconsaxPlayCircle2
 import org.spotube.spotube.resources.iconsax.IconsaxShuffle
+import org.spotube.spotube.resources.iconsax.IconsaxDirectboxReceive
 import org.spotube.spotube.resources.iconsax.User
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
@@ -95,6 +96,9 @@ fun CollectionDetails(
     onFollowClick: () -> Unit = { },
     showFollowButton: Boolean = true,
     onEdit: (() -> Unit)? = null,
+    onDownload: (() -> Unit)? = null,
+    isDownloadLoading: Boolean = false,
+    downloadError: String? = null,
     sharedElementKey: String? = null) {
     Box(modifier = modifier.fillMaxWidth()) {
         val isCompact = currentWindowWidthBreakpoint() isBelow WindowBreakpoints.Medium
@@ -193,6 +197,21 @@ fun CollectionDetails(
                             imageVector = Iconsax.IconsaxEdit,
                             contentDescription = stringResource(Res.string.collection_details_edit_playlist))
                     }
+                }
+            }
+        }
+        val downloadControls = @Composable {
+            if (onDownload != null) {
+                MillenniumButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = onDownload,
+                    loading = isDownloadLoading,
+                    style = MillenniumButtonStyle.Secondary) {
+                    MillenniumIcon(Iconsax.IconsaxDirectboxReceive, contentDescription = null)
+                    TextWithShimmer(text = stringResource(Res.string.playlist_download_button))
+                }
+                if (downloadError != null) {
+                    Text(stringResource(Res.string.playlist_download_failed), color = AppTheme.colors.error)
                 }
             }
         }
@@ -306,6 +325,7 @@ fun CollectionDetails(
                         }
                     }
                     playPauseButton()
+                    downloadControls()
                 }
             } else {
                 Row(
@@ -323,6 +343,7 @@ fun CollectionDetails(
                         ownerInfo()
                         actions()
                         playPauseButton()
+                        downloadControls()
                     }
                 }
             }

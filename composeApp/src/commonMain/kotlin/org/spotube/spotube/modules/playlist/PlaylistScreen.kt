@@ -66,6 +66,8 @@ fun PlaylistScreen(
     navigationCommands: NavigationCommands
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val isDownloadLoading by viewModel.isDownloadLoading.collectAsStateWithLifecycle()
+    val downloadError by viewModel.downloadError.collectAsStateWithLifecycle()
     val playbackUiState by viewModel.playbackUiState.collectAsStateWithLifecycle()
     val jamRoomService: JamRoomService = koinInject()
     val jamActive by jamRoomService.role.map { it != null }
@@ -130,6 +132,9 @@ fun PlaylistScreen(
         onPlay = viewModel::playPlaylist,
         onShufflePlay = viewModel::shufflePlayPlaylist,
         onAddToQueue = viewModel::addPlaylistToQueue,
+        onDownload = if (dataState != null) viewModel::downloadPlaylist else null,
+        isDownloadLoading = isDownloadLoading,
+        downloadError = downloadError,
         isPlaying = isPlaying,
         isFollowing = savedPlaylistIds.contains(playlistId),
         isFollowLoading = dataState?.isSaving == true,
