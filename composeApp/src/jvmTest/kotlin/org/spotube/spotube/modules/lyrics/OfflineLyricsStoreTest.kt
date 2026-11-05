@@ -53,4 +53,9 @@ class OfflineLyricsStoreTest {
         OfflineLyricsStore(root).write("Song", emptyList(), 1000, plain)
         assertEquals(plain, OfflineLyricsStore(root).read("Song", emptyList(), 1000))
     }
+    @Test fun downloadedMultiArtistTagsMatchStreamingMetadata() = scenario { root ->
+        OfflineLyricsStore(root).write("Song", listOf("Singer", "Guest"), 180000, lyrics)
+        // Download metadata currently writes artists as a single comma-separated tag.
+        assertEquals(lyrics, OfflineLyricsStore(root).read("Song", listOf("Singer, Guest"), 180000))
+    }
 }

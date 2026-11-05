@@ -27,7 +27,7 @@ internal class OfflineLyricsStore(private val directory: Path, private val fs: F
     private data class Record(val durationMs: Long, val lyrics: LyricsResponse)
 
     private fun key(title: String, artists: List<String>) =
-        (listOf(title.trim().lowercase()) + artists.map { it.trim().lowercase() }).joinToString("\u0000")
+        (title.trim().lowercase() + "\u0000" + artists.joinToString(", ") { it.trim().lowercase() })
             .encodeUtf8().sha256().hex()
 
     suspend fun read(title: String, artists: List<String>, durationMs: Long): LyricsResponse? =
