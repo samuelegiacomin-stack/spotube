@@ -36,6 +36,12 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.update
+import org.spotube.spotube.core.i18n.getString
+import spotube.composeapp.generated.resources.Res
+import spotube.composeapp.generated.resources.playlist_write_failed
+import spotube.composeapp.generated.resources.playlist_login_required
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class LibraryRepository(
@@ -45,6 +51,12 @@ class LibraryRepository(
 
     val plugin
         get() = pluginManager.selectedMetadataPlugin.value
+
+    private val playlistRevision = MutableStateFlow(0L)
+    val playlistRevisionFlow = playlistRevision.asStateFlow()
+    private val playlistWriteError = MutableStateFlow<String?>(null)
+    val playlistWriteErrorFlow = playlistWriteError.asStateFlow()
+    fun clearPlaylistWriteError() { playlistWriteError.value = null }
 
     private val playlistCache =
         Cache.Builder<PaginationStrategy, PaginationResult<MetadataPlaylist>>().build()
@@ -345,13 +357,33 @@ class LibraryRepository(
     }
 
     suspend fun addTracksToPlaylist(playlistId: String, trackIds: List<String>) {
-        authPlugin?.let { plugin ->
+        if (trackIds.isEmpty()) return
+        playlistWriteError.value = null
+        try {
+            // The plugin's live login state is authoritative; the observer may still be
+            // catching up immediately after signing in.
+            val plugin = plugin?.takeIf { it.loggedInFlow.value }
+                ?: error(getString(Res.string.playlist_login_required))
             pluginManager.withScope {
                 plugin.use {
                     metadataPlaylistAPI.addTracksToPlaylist(playlistId, trackIds)
                 }
             }
             playlistCache.invalidateAll()
+            playlistRevision.update { it + 1 }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            playlistWriteError.value = getString(Res.string.playlist_write_failed) +
+                (e.message?.let { ": $it" } ?: "")
+            throw e
         }
+    }
+
+    suspend fun editablePlaylists(currentUserId: String?): List<MetadataPlaylist> {
+        val userId = currentUserId ?: currentUser()?.id ?: return emptyList()
+        return org.spotube.spotube.modules.library.playlist.loadOwnedPlaylists(
+            userId, ::savedPlaylists,
+            fetchDetails = { id -> plugin?.use { metadataPlaylistAPI.getPlaylist(id) } })
     }
 }

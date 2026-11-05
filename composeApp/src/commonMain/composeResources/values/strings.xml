@@ -16,6 +16,8 @@
   -->
 
 <resources>
+    <string name="playlist_write_failed">Could not update the playlist</string>
+    <string name="playlist_login_required">Sign in to the metadata plugin to edit playlists</string>
     <string name="queue_title">Queue</string>
     <string name="queue_clear_queue">Clear Queue</string>
     <string name="queue_filter_queue">Filter queue...</string>

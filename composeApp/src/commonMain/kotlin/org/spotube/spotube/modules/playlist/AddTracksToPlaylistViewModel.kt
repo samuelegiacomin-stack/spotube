@@ -45,7 +45,8 @@ data class AddTracksToPlaylistUiState(
     val queryState: TextFieldState = TextFieldState(),
     val results: List<AddTrackResultUi> = emptyList(),
     val isSearching: Boolean = false,
-    val hasSearched: Boolean = false
+    val hasSearched: Boolean = false,
+    val error: String? = null
 )
 
 private data class AddTracksState(
@@ -53,7 +54,8 @@ private data class AddTracksState(
     val isSearching: Boolean = false,
     val hasSearched: Boolean = false,
     val addingTrackIds: Set<String> = emptySet(),
-    val addedTrackIds: Set<String> = emptySet()
+    val addedTrackIds: Set<String> = emptySet(),
+    val error: String? = null
 )
 
 class AddTracksToPlaylistViewModel(
@@ -77,7 +79,8 @@ class AddTracksToPlaylistViewModel(
                 )
             },
             isSearching = current.isSearching,
-            hasSearched = current.hasSearched
+            hasSearched = current.hasSearched,
+            error = current.error
         )
     }.stateIn(
         viewModelScope,
@@ -107,7 +110,7 @@ class AddTracksToPlaylistViewModel(
     fun addTrack(trackId: String) {
         val current = state.value
         if (trackId in current.addingTrackIds || trackId in current.addedTrackIds) return
-        state.update { it.copy(addingTrackIds = it.addingTrackIds + trackId) }
+        state.update { it.copy(addingTrackIds = it.addingTrackIds + trackId, error = null) }
         viewModelScope.launch {
             try {
                 libraryRepository.addTracksToPlaylist(playlistId, listOf(trackId))
@@ -116,6 +119,7 @@ class AddTracksToPlaylistViewModel(
                 throw cancelled
             } catch (e: Exception) {
                 logger.e(e) { "Failed to add track $trackId to playlist $playlistId" }
+                state.update { it.copy(error = libraryRepository.playlistWriteErrorFlow.value ?: e.message) }
             } finally {
                 state.update { it.copy(addingTrackIds = it.addingTrackIds - trackId) }
             }

@@ -114,6 +114,7 @@ fun AddTracksToPlaylistDialog(
                     style = MillenniumIconButtonStyle.Secondary)
             }
 
+            state.error?.let { Text(it) }
             when {
                 state.isSearching -> {
                     Box(

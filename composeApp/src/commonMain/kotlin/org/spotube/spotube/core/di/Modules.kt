@@ -70,6 +70,8 @@ import org.spotube.spotube.modules.library.local_tracks.media.LocalMediaFoldersC
 import org.spotube.spotube.modules.library.local_tracks.media.LocalMediaLibraryCoordinator
 import org.spotube.spotube.modules.library.playlist.LibraryPlaylistsViewModel
 import org.spotube.spotube.modules.lyrics.LyricsViewModel
+import org.spotube.spotube.modules.lyrics.LyricsRepository
+import org.spotube.spotube.modules.library.playlist.PlaylistPickerViewModel
 import org.spotube.spotube.modules.playlist.AddTracksToPlaylistViewModel
 import org.spotube.spotube.modules.playlist.PlaylistRepository
 import org.spotube.spotube.modules.playlist.PlaylistViewModel
@@ -177,6 +179,8 @@ val sharedModules = module {
 
     // Downloads
     singleOf(::DownloadManager)
+    singleOf(::LyricsRepository)
+    viewModelOf(::PlaylistPickerViewModel)
     viewModelOf(::DownloadsViewModel)
 
     // Playlist

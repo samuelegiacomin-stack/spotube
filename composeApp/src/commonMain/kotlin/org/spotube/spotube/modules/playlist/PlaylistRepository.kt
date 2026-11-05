@@ -48,6 +48,9 @@ class PlaylistRepository(
 
     init {
         scope.launch {
+            libraryRepository.playlistRevisionFlow.collect { invalidateCaches() }
+        }
+        scope.launch {
             pluginManager.selectedMetadataPlugin
                 .filterNotNull()
                 .flatMapLatest { it.loggedInFlow }

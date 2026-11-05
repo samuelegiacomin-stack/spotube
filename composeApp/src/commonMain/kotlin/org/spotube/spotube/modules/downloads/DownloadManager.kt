@@ -88,6 +88,7 @@ class DownloadManager(
     private val streamingUrlRepository: StreamingUrlRepository,
     private val httpClientFactory: HttpClientFactory,
     private val localMediaLibrary: LocalMediaLibraryCoordinator,
+    private val lyricsRepository: org.spotube.spotube.modules.lyrics.LyricsRepository,
 ) {
     companion object {
         const val MAX_CONCURRENT_DOWNLOADS = 1
@@ -278,12 +279,14 @@ class DownloadManager(
                 // Fetch this song's artwork while its audio transfers, instead of starting
                 // another network wait at 99%. Cancellation stops both requests together.
                 val artwork = async { fetchCover(item) }
+                val lyrics = async { lyricsRepository.get(track) }
                 executeSingleConnectionDownload(url, filename, item, downloadDir)
 
                 val finalPath = downloadDir / filename.toPath()
                 val writtenBytes = fileSystem.metadataOrNull(finalPath)?.size
                 logger.i { "[Download ${item.id}] wrote $finalPath ($writtenBytes bytes)" }
                 applyMetadata(item, filename, downloadDir, artwork.await())
+                lyrics.await()
             }
             // Without this Android music players and the Files app's Audio view don't see the
             // file until the next full media scan.

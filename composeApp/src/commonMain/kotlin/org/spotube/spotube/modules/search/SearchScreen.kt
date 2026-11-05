@@ -510,6 +510,7 @@ fun SearchScreen(viewModel: SearchScreenViewModel = koinViewModel()) {
                         playlistId,
                         tracksToAddToPlaylist.map { it.id }
                     )
+                    showAddToPlaylistPicker = false
                 }
             })
     }

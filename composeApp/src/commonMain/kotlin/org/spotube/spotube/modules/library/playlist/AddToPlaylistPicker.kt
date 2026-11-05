@@ -48,6 +48,8 @@ import com.composeunstyled.currentWindowWidthBreakpoint
 import org.spotube.millennium.adaptive.WindowBreakpoints
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.Composable
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import org.koin.compose.viewmodel.koinViewModel
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -92,44 +94,16 @@ fun AddToPlaylistPicker(
 
     val isLargeScreen = currentWindowWidthBreakpoint() isAtLeast WindowBreakpoints.Medium
 
-    var playlists by remember { mutableStateOf<List<MetadataPlaylist>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var searchQuery by remember { mutableStateOf("") }
-    val scope = rememberCoroutineScope()
-    val searchState = rememberTextFieldState(searchQuery)
-
-    LaunchedEffect(searchState) {
-        snapshotFlow { searchState.text.toString() }
-            .drop(1)
-            .collect { searchQuery = it }
-    }
+    val viewModel: PlaylistPickerViewModel = koinViewModel()
+    val state by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(visible, currentUserId) {
-        if (visible) {
-            isLoading = true
-            scope.launch {
-                val result = libraryRepository.savedPlaylists()
-                playlists = result?.items?.filter {
-                    currentUserId != null && it.owner?.id == currentUserId
-                } ?: emptyList()
-                isLoading = false
-            }
-        }
-    }
-
-    val filteredPlaylists = remember(playlists, searchQuery) {
-        if (searchQuery.isBlank()) {
-            playlists
-        } else {
-            playlists.filter {
-                it.title.contains(searchQuery, ignoreCase = true) ||
-                    it.description?.contains(searchQuery, ignoreCase = true) == true
-            }
-        }
+        viewModel.load(currentUserId)
     }
 
     val content: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxSize()) {
+            state.error?.let { Text(it, color = AppTheme.colors.onSurface) }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -140,18 +114,17 @@ fun AddToPlaylistPicker(
                     imageVector = Iconsax.IconsaxFilterSearch,
                     contentDescription = stringResource(Res.string.library_add_to_playlist_search_content_description))
                 MillenniumTextField(
-                    state = searchState,
+                    state = viewModel.query,
                     
                     modifier = Modifier.weight(1f),
                     placeholder = stringResource(Res.string.library_add_to_playlist_search_placeholder))
             }
 
             PlaylistPickerContent(
-                playlists = filteredPlaylists,
-                isLoading = isLoading,
+                playlists = state.playlists,
+                isLoading = state.loading,
                 onPlaylistSelected = { playlistId ->
                     onPlaylistSelected(playlistId)
-                    onDismiss()
                 })
         }
     }

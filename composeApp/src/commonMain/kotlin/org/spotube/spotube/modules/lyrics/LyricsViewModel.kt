@@ -33,6 +33,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.Serializable
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -54,7 +56,7 @@ data class LyricsUiState(
     val coverUrl: String = "")
 
 class LyricsViewModel(
-    private val pluginManager: PluginManager,
+    private val lyricsRepository: LyricsRepository,
     private val audioPlayer: AudioPlayerInterface,
     private val audioPlayerQueue: AudioPlayerQueue) : ViewModel() {
 
@@ -72,42 +74,32 @@ class LyricsViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LyricsUiState())
 
     private var currentTrackId: String? = null
+    private var loadJob: Job? = null
 
     fun setMode(mode: LyricType) {
         _uiState.update { it.copy(mode = mode) }
     }
 
     fun loadLyrics(forceReload: Boolean = false) {
-        viewModelScope.launch {
-            val entry = audioPlayerQueue.currentQueueEntryFlow.value ?: return@launch
-            val track = when (entry) {
-                is QueueEntry.StreamingTrack -> entry.track
-                is QueueEntry.LocalTrack -> return@launch
-            }
-
-            if (!forceReload && currentTrackId == track.id && _uiState.value.syncedLyrics != null) {
-                return@launch
-            }
-
-            currentTrackId = track.id
-            _uiState.update { it.copy(isLoading = true, error = null) }
+        val entry = audioPlayerQueue.currentQueueEntryFlow.value ?: return
+        val id = entryId(entry)
+        if (!forceReload && currentTrackId == id && (loadJob?.isActive == true ||
+                _uiState.value.syncedLyrics != null || _uiState.value.plainLyrics != null)) return
+        loadJob?.cancel()
+        currentTrackId = id
+        _uiState.update { it.copy(isLoading = true, error = null, syncedLyrics = null, plainLyrics = null) }
+        loadJob = viewModelScope.launch {
             try {
-                pluginManager.selectedLyricsPlugin.value?.let { pluginService ->
-                    pluginService.use {
-                       val lyrics = lyricsAPI.getLyrics(track)
-
-                        _uiState.update {
-                            it.copy(
-                                syncedLyrics = lyrics?.syncedLyrics,
-                                plainLyrics = lyrics?.plainLyrics,
-                                isLoading = false)
-                        }
-                    }
-                } ?: run {
-                    _uiState.update { it.copy(isLoading = false) }
+                val lyrics = lyricsRepository.get(entry, forceReload)
+                if (currentTrackId == id) _uiState.update {
+                    it.copy(syncedLyrics = lyrics?.syncedLyrics, plainLyrics = lyrics?.plainLyrics,
+                        mode = if (lyrics?.syncedLyrics.isNullOrEmpty() && !lyrics?.plainLyrics.isNullOrBlank())
+                            LyricType.STATIC else it.mode, isLoading = false)
                 }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, error = e.message) }
+                if (currentTrackId == id) _uiState.update { it.copy(isLoading = false, error = e.message) }
             }
         }
     }
@@ -115,10 +107,7 @@ class LyricsViewModel(
     init {
         viewModelScope.launch {
             audioPlayerQueue.currentQueueEntryFlow.collect { entry ->
-                val trackId = when (entry) {
-                    is QueueEntry.StreamingTrack -> entry.track.id
-                    else -> null
-                }
+                val trackId = entry?.let(::entryId)
                 if (entry is QueueEntry.StreamingTrack) {
                     val track = entry.track
                     _uiState.update {
@@ -130,11 +119,24 @@ class LyricsViewModel(
                         )
                     }
                 }
+                if (entry is QueueEntry.LocalTrack) _uiState.update {
+                    it.copy(trackTitle = entry.name, trackArtists = entry.artists.joinToString(", "), coverUrl = "")
+                }
+                if (entry == null) {
+                    loadJob?.cancel()
+                    currentTrackId = null
+                    _uiState.value = LyricsUiState(mode = _uiState.value.mode)
+                }
                 if (trackId != null && trackId != currentTrackId) {
                     loadLyrics()
                 }
             }
         }
+    }
+
+    private fun entryId(entry: QueueEntry): String = when (entry) {
+        is QueueEntry.StreamingTrack -> "stream:${entry.track.id}"
+        is QueueEntry.LocalTrack -> "local:${entry.url}"
     }
 
     fun seekToLine(line: LyricsLine) {

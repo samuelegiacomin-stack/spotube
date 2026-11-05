@@ -83,6 +83,8 @@ class RealLRCLibLyricsAPI : LyricsAPI, KoinComponent {
                         ) // Convert ms to seconds
                     }
                 }.body<LRCLibResponse>()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 null
             }

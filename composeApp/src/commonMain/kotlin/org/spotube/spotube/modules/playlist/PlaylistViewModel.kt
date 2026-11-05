@@ -39,6 +39,7 @@ import org.spotube.spotube.modules.library.LibraryRepository
 import org.spotube.spotube.modules.saved_tracks.SavedTracksRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -154,6 +155,12 @@ class PlaylistViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TrackOptionsContext())
 
     init {
+        viewModelScope.launch {
+            libraryRepository.playlistRevisionFlow.drop(1).collect {
+                repository.invalidateCaches()
+                loadInitialData()
+            }
+        }
         viewModelScope.launch {
             repository.pluginManager.selectedMetadataPlugin
                 .filterNotNull()
