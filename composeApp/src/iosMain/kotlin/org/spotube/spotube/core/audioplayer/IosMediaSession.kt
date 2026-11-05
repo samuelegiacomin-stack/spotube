@@ -54,12 +54,13 @@ import platform.MediaPlayer.MPRemoteCommandCenter
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusCommandFailed
 import platform.MediaPlayer.MPRemoteCommandHandlerStatusSuccess
 
-internal class IosMediaSession {
+internal class IosMediaSession : PlayerMediaSession {
     private val audioSession = AVAudioSession.sharedInstance()
     private val nowPlayingInfoCenter = MPNowPlayingInfoCenter.defaultCenter()
     private val remoteCommandCenter = MPRemoteCommandCenter.sharedCommandCenter()
 
     private var configured = false
+    private val updateGate = NowPlayingUpdateGate()
     private var artworkUrl: String? = null
     private var artworkTask: NSURLSessionDataTask? = null
     private var artwork: MPMediaItemArtwork? = null
@@ -73,7 +74,7 @@ internal class IosMediaSession {
     private var onNext: (() -> Unit)? = null
     private var onPrevious: (() -> Unit)? = null
 
-    fun configure(
+    override fun configure(
         onPlay: () -> Unit,
         onPause: () -> Unit,
         onSeek: (Double) -> Unit,
@@ -98,15 +99,15 @@ internal class IosMediaSession {
         registerRemoteCommands()
     }
 
-    fun activate() {
+    override fun activate() {
         audioSession.setActive(true, error = null)
     }
 
-    fun deactivate() {
+    override fun deactivate() {
         audioSession.setActive(false, error = null)
     }
 
-    fun update(
+    override fun update(
         item: MediaItem?,
         positionSeconds: Double,
         durationSeconds: Double,
@@ -122,11 +123,13 @@ internal class IosMediaSession {
         item: MediaItem?, positionSeconds: Double, durationSeconds: Double, isPlaying: Boolean
     ) {
         if (item == null) {
+            updateGate.reset()
             resetArtwork()
             nowPlayingInfoCenter.nowPlayingInfo = null
             return
         }
 
+        if (!updateGate.shouldPublish(item, positionSeconds, durationSeconds, isPlaying)) return
         updateArtwork(item)
         val info = buildMap<Any?, Any?> {
             artwork?.let { put(MPMediaItemPropertyArtwork, it) }
@@ -146,11 +149,12 @@ internal class IosMediaSession {
         nowPlayingInfoCenter.nowPlayingInfo = info
     }
 
-    fun clear() {
+    override fun clear() {
         dispatch_async(dispatch_get_main_queue()) { clearOnMain() }
     }
 
     private fun clearOnMain() {
+        updateGate.reset()
         resetArtwork()
         artworkCache.clear()
         nowPlayingInfoCenter.nowPlayingInfo = null

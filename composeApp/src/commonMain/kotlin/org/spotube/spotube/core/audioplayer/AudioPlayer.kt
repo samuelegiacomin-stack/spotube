@@ -33,10 +33,17 @@ interface AudioPlayerInterface {
     // Playlist management
     suspend fun load(playlist: List<MediaItem>, autoPlay: Boolean, startPosition: Int)
     suspend fun addMediaItem(mediaItem: MediaItem)
+    suspend fun addMediaItems(mediaItems: List<MediaItem>) {
+        mediaItems.forEach { addMediaItem(it) }
+    }
     suspend fun insertMediaItemAtNextIndex(mediaItem: MediaItem)
     suspend fun removeMediaItem(mediaItem: MediaItem)
     suspend fun moveMediaItem(fromIndex: Int, toIndex: Int)
     suspend fun skipToNext()
+    suspend fun continueAfterQueueEnd(expectedUrl: String) {
+        if (playerStateFlow.value == PlayerState.COMPLETED && currentMediaItemFlow.value?.url == expectedUrl)
+            skipToNext()
+    }
     suspend fun skipToPrevious()
     suspend fun jumpTo(index: Int)
 

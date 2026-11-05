@@ -196,9 +196,7 @@ class DeviceAudioPlayerQueue(
 
         updateCollectionContext(collectionEntry)
 
-        mediaItems.forEach { mediaItem ->
-            audioPlayer.addMediaItem(mediaItem)
-        }
+        audioPlayer.addMediaItems(mediaItems)
 
         persistQueueStateIfReady()
         logger.d { "All entries added successfully" }
@@ -340,7 +338,7 @@ class DeviceAudioPlayerQueue(
         val settings = settingsProvider.settingsState.value ?: return
         if (!settings.enableEndlessPlayback) return
 
-        val queue = queueFlow.value
+        val queue = getQueue()
         val streamingTracks = queue.filterIsInstance<QueueEntry.StreamingTrack>()
         if (streamingTracks.isEmpty()) return
 
@@ -353,6 +351,8 @@ class DeviceAudioPlayerQueue(
 
         val seedTrackIds = seedTracks.map { it.track.id }
         if (seedTrackIds.isEmpty()) return
+        val requestedMedia = audioPlayer.currentMediaItemFlow.value?.url ?: return
+        val requestedCollection = currentCollectionEntryState.value
 
         isFetchingRecommendations = true
         logger.i { "Endless playback: fetching recommendations with ${seedTrackIds.size} seed tracks" }
@@ -394,7 +394,14 @@ class DeviceAudioPlayerQueue(
             }
 
             logger.i { "Endless playback: adding ${newEntries.size} recommended tracks to queue" }
+            // Recommendations can arrive after the final item ended, or after the user
+            // selected another collection. Resume only the same finished queue.
+            if (audioPlayer.currentMediaItemFlow.value?.url != requestedMedia ||
+                currentCollectionEntryState.value != requestedCollection || endlessPlaybackSuppressed) return
             addAllToQueue(newEntries)
+            audioPlayer.continueAfterQueueEnd(requestedMedia)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logger.e(e) { "Endless playback: failed to fetch recommendations" }
         } finally {

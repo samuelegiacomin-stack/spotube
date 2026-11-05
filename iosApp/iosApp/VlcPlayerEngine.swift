@@ -35,15 +35,17 @@ final class VlcPlayerEngineFactory: NSObject, NativePlayerEngineFactory {
 ///
 /// Every VLC call is made on the main queue, in the order the Kotlin side issued it.
 final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegate {
-    private let player = VLCMediaPlayer()
+    private var player = VLCMediaPlayer()
     private let audioSession = AVAudioSession.sharedInstance()
     private var listener: NativePlayerListener?
+    private var pendingListener: NativePlayerListener?
     private var released = false
 
     private var rate: Float = 1
     private var volumePercent: Int32 = 100
     private var lastReportedDurationMs: Int64 = 0
     private var lastReportedState: NativePlayerState?
+    private var didReportEnd = false
 
     override init() {
         super.init()
@@ -53,12 +55,24 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
     // MARK: NativePlayerEngine
 
     func setListener(listener: NativePlayerListener?) {
-        onMain { self.listener = listener }
+        onMain {
+            self.pendingListener = listener
+            if listener == nil { self.listener = nil }
+        }
     }
 
     func load(url: String, autoPlay: Bool, startPositionMs: Int64) {
         onMain {
             guard !self.released else { return }
+            // Install the listener atomically with its player. An old player's event
+            // between setListener and load must still target the old generation.
+            self.player.delegate = nil
+            self.player.stop()
+            self.player = VLCMediaPlayer()
+            self.player.delegate = self
+            self.listener = self.pendingListener
+            self.lastReportedState = nil
+            self.didReportEnd = false
             let mediaUrl: URL
             if url.hasPrefix("/") {
                 // LocalMediaTrack stores a filesystem path. URL(string:) makes a relative URL
@@ -138,20 +152,24 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
                 self.listener?.onError(message: "Could not deactivate audio session: \(error.localizedDescription)")
             }
             self.listener = nil
+            self.pendingListener = nil
         }
     }
 
     // MARK: VLCMediaPlayerDelegate
 
     func mediaPlayerStateChanged(_ aNotification: Notification) {
+        guard let source = aNotification.object as? VLCMediaPlayer else { return }
+        let state = source.state
+        let playing = source.isPlaying
         onMain {
-            guard !self.released else { return }
-            switch self.player.state {
+            guard !self.released, !self.didReportEnd, source === self.player else { return }
+            switch state {
             case .opening:
                 self.report(.opening)
             case .buffering, .esAdded:
                 // MobileVLCKit keeps sending these while it plays; only a stall counts as buffering.
-                self.report(self.player.isPlaying ? .playing : .buffering)
+                self.report(playing ? .playing : .buffering)
             case .playing:
                 self.report(.playing)
             case .paused:
@@ -170,8 +188,9 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
     }
 
     func mediaPlayerTimeChanged(_ aNotification: Notification) {
+        guard let source = aNotification.object as? VLCMediaPlayer else { return }
         onMain {
-            guard !self.released else { return }
+            guard !self.released, !self.didReportEnd, source === self.player else { return }
             // Time only advances while playing, whatever the last state notification said.
             if self.player.isPlaying { self.report(.playing) }
             self.reportDuration()
@@ -202,6 +221,10 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
 
     /// Sends [state] to Kotlin unless it was the last one sent.
     private func report(_ state: NativePlayerState) {
+        if state == .ended {
+            guard !didReportEnd else { return }
+            didReportEnd = true
+        }
         guard state != lastReportedState else { return }
         lastReportedState = state
         if state == .playing {
@@ -224,6 +247,7 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
     }
 
     private func onMain(_ work: @escaping () -> Void) {
-        DispatchQueue.main.async(execute: work)
+        if Thread.isMainThread { work() }
+        else { DispatchQueue.main.async(execute: work) }
     }
 }

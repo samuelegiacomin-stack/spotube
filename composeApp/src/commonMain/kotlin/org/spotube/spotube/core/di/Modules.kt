@@ -22,6 +22,8 @@ import org.spotube.spotube.core.network.HttpClientFactory
 import co.touchlab.kermit.Logger
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueueRepository
+import org.spotube.spotube.core.audioplayer.DeduplicatingQueueStateRepository
+import org.spotube.spotube.core.audioplayer.NextTrackPrefetcher
 import org.spotube.spotube.core.audioplayer.DeviceAudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.QueueStateRepository
 import org.spotube.spotube.core.db.Database
@@ -297,7 +299,9 @@ val sharedModules = module {
             get(), get(), get(), get(), get(), get(), get(),
             evictCachedAudio = get<CacheManager>()::invalidateCacheEntry)
     }
-    singleOf(::AudioPlayerQueueRepository) { bind<QueueStateRepository>() }
+    singleOf(::AudioPlayerQueueRepository)
+    single<QueueStateRepository> { DeduplicatingQueueStateRepository(get<AudioPlayerQueueRepository>()) }
+    singleOf(::NextTrackPrefetcher) withOptions { createdAtStart() }
     singleOf(::PlaybackProxyEndpoint)
     single<AudioPlayerQueue> {
         DeviceAudioPlayerQueue(get(), get(), get(), get(), get(), get())

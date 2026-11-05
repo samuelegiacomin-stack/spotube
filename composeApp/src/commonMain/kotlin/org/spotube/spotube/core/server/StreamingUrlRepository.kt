@@ -165,6 +165,7 @@ class StreamingUrlRepository(
                         .firstOrNull()
                 }
             }.getOrElse { throwable ->
+                if (throwable is kotlinx.coroutines.CancellationException) throw throwable
                 logger.w(throwable) { "Failed to resolve audio stream for track $trackId using matched source" }
                 null
             }
@@ -190,6 +191,7 @@ class StreamingUrlRepository(
                 audioAPI.getStreamsByTrack(track)
             }
         }.getOrElse { throwable ->
+            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
             logger.w(throwable) { "Failed to resolve audio stream for track $trackId" }
             return null
         }
@@ -219,6 +221,7 @@ class StreamingUrlRepository(
                 }
             }
         }.getOrElse { throwable ->
+            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
             logger.w(throwable) { "Failed to resolve audio stream for track $trackId" }
             return null
         }
