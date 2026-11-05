@@ -58,4 +58,10 @@ class OfflineLyricsStoreTest {
         // Download metadata currently writes artists as a single comma-separated tag.
         assertEquals(lyrics, OfflineLyricsStore(root).read("Song", listOf("Singer, Guest"), 180000))
     }
+    @Test fun boundDownloadSurvivesDifferentSourceDurationAndContainerMove() = scenario { root ->
+        OfflineLyricsStore(root).write("Song", listOf("Singer"), 180000, lyrics, "Singer - Song.m4a")
+        val restarted = OfflineLyricsStore(root)
+        assertEquals(lyrics, restarted.read("Song", listOf("Singer"), 190000, "Singer - Song.m4a"))
+        assertNull(restarted.read("Song", listOf("Singer"), 190000, "Different recording.m4a"))
+    }
 }

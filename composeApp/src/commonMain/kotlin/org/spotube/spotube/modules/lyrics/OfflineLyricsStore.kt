@@ -30,26 +30,28 @@ internal class OfflineLyricsStore(private val directory: Path, private val fs: F
         (title.trim().lowercase() + "\u0000" + artists.joinToString(", ") { it.trim().lowercase() })
             .encodeUtf8().sha256().hex()
 
-    suspend fun read(title: String, artists: List<String>, durationMs: Long): LyricsResponse? =
+    suspend fun read(title: String, artists: List<String>, durationMs: Long, downloadedFilename: String? = null): LyricsResponse? =
         withContext(Dispatchers.IO) {
             mutex.withLock {
-                val path = directory / (key(title, artists) + ".json")
+                val suffix = downloadedFilename?.let { "-" + it.encodeUtf8().sha256().hex() }.orEmpty()
+                val path = directory / (key(title, artists) + suffix + ".json")
                 if ((fs.metadataOrNull(path)?.size ?: return@withLock null) > MAX_BYTES) return@withLock null
                 val record = runCatching { fs.read(path) { json.decodeFromString<Record>(readUtf8()) } }.getOrNull()
                     ?: return@withLock null
-                record.lyrics.takeIf { durationMs <= 0 || record.durationMs <= 0 || abs(durationMs - record.durationMs) <= 2_000 }
+                record.lyrics.takeIf { downloadedFilename != null || durationMs <= 0 || record.durationMs <= 0 || abs(durationMs - record.durationMs) <= 2_000 }
             }
         }
 
-    suspend fun write(title: String, artists: List<String>, durationMs: Long, lyrics: LyricsResponse) =
+    suspend fun write(title: String, artists: List<String>, durationMs: Long, lyrics: LyricsResponse, downloadedFilename: String? = null) =
         withContext(Dispatchers.IO) {
             if (lyrics.syncedLyrics.isNullOrEmpty() && lyrics.plainLyrics.isNullOrBlank()) return@withContext
             val data = json.encodeToString(Record(durationMs, lyrics))
             if (data.encodeUtf8().size > MAX_BYTES) return@withContext
             mutex.withLock {
                 fs.createDirectories(directory)
-                val target = directory / (key(title, artists) + ".json")
-                val temp = directory / (key(title, artists) + ".tmp")
+                val suffix = downloadedFilename?.let { "-" + it.encodeUtf8().sha256().hex() }.orEmpty()
+                val target = directory / (key(title, artists) + suffix + ".json")
+                val temp = directory / (key(title, artists) + suffix + ".tmp")
                 try {
                     fs.write(temp) { writeUtf8(data) }
                     fs.atomicMove(temp, target)

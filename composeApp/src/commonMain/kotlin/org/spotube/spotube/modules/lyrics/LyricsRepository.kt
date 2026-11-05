@@ -21,12 +21,32 @@ class LyricsRepository(private val pluginManager: PluginManager, paths: Paths) {
 
     suspend fun get(entry: QueueEntry, forceReload: Boolean = false): LyricsResponse? = when (entry) {
         is QueueEntry.StreamingTrack -> get(entry.track, forceReload)
-        is QueueEntry.LocalTrack -> get(MetadataTrack(
+        is QueueEntry.LocalTrack -> readDownloaded(entry) ?: get(MetadataTrack(
             id = "local", title = entry.name, durationMs = entry.duration,
             trackNumber = null, discNumber = null,
             artists = entry.artists.map { MetadataArtist.Basic("", it, emptyList(), null) },
             album = null, thumbnails = null, explicit = null, popularity = null,
             isrcCode = null, externalUri = null), forceReload)
+    }
+
+    private suspend fun readDownloaded(entry: QueueEntry.LocalTrack): LyricsResponse? = try {
+        store.read(entry.name, entry.artists, entry.duration, entry.url.substringAfterLast('/'))
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (e: Exception) {
+        logger.w(e) { "Could not read download lyrics" }
+        null
+    }
+
+    suspend fun bindDownload(track: MetadataTrack, filename: String, lyrics: LyricsResponse?) {
+        if (lyrics == null) return
+        try {
+            store.write(track.title, track.artists.map { it.name }, track.durationMs, lyrics, filename)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            logger.w(e) { "Could not link lyrics to downloaded file" }
+        }
     }
 
     suspend fun get(track: MetadataTrack, forceReload: Boolean = false): LyricsResponse? {

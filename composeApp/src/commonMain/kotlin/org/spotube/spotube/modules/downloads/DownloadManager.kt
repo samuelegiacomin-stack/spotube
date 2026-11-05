@@ -286,7 +286,7 @@ class DownloadManager(
                 val writtenBytes = fileSystem.metadataOrNull(finalPath)?.size
                 logger.i { "[Download ${item.id}] wrote $finalPath ($writtenBytes bytes)" }
                 applyMetadata(item, filename, downloadDir, artwork.await())
-                lyrics.await()
+                lyricsRepository.bindDownload(track, filename, lyrics.await())
             }
             // Without this Android music players and the Files app's Audio view don't see the
             // file until the next full media scan.
