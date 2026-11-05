@@ -506,11 +506,17 @@ fun SearchScreen(viewModel: SearchScreenViewModel = koinViewModel()) {
             onDismiss = { showAddToPlaylistPicker = false },
             onPlaylistSelected = { playlistId ->
                 scope.launch {
-                    libraryRepository.addTracksToPlaylist(
-                        playlistId,
-                        tracksToAddToPlaylist.map { it.id }
-                    )
-                    showAddToPlaylistPicker = false
+                    try {
+                        libraryRepository.addTracksToPlaylist(
+                            playlistId,
+                            tracksToAddToPlaylist.map { it.id }
+                        )
+                        showAddToPlaylistPicker = false
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The repository exposes the failure in the still-open picker.
+                    }
                 }
             })
     }
