@@ -30,6 +30,7 @@ import org.spotube.spotube.core.playback.CollectionPlaybackHelper
 import org.spotube.spotube.modules.blacklist.BlacklistRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -43,6 +44,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
+import org.koin.core.component.inject
 import org.spotube.spotube.core.i18n.getPluralString
 import org.spotube.spotube.core.i18n.getString
 import spotube.composeapp.generated.resources.Res
@@ -118,6 +120,8 @@ class RemotePlaybackController(
     private val jamRoomService: JamRoomService) : KoinComponent {
     private val logger = Logger.withTag("RemotePlaybackController")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val audioPlayer: AudioPlayerInterface by inject()
+    private var pendingLocalPlay: Job? = null
 
     private val _pendingRequest = MutableStateFlow<PlaybackDestinationRequest?>(null)
     val pendingRequest: StateFlow<PlaybackDestinationRequest?> = _pendingRequest.asStateFlow()
@@ -160,6 +164,20 @@ class RemotePlaybackController(
         startTrack: MetadataTrack? = null,
         shuffle: Boolean = false) {
         request(PlaybackDestinationRequest.Collection(title, PlaybackDestinationAction.Play, type, id, startTrack, shuffle))
+    }
+
+    fun togglePlaylistPlayback(id: String, title: String) {
+        if (!audioPlayerQueue.isPlaylistPlaying(id)) {
+            requestCollectionPlay(RemoteCollectionType.Playlist, id, title)
+            return
+        }
+        scope.launch {
+            if (audioPlayer.playerStateFlow.value in setOf(
+                org.spotube.spotube.core.audioplayer.PlayerState.PLAYING,
+                org.spotube.spotube.core.audioplayer.PlayerState.BUFFERING)) {
+                audioPlayer.pause()
+            } else audioPlayer.play()
+        }
     }
 
     fun requestCollectionAddToQueue(type: RemoteCollectionType, id: String, title: String) {
@@ -280,17 +298,22 @@ class RemotePlaybackController(
             ?.let { CollectionPlaybackKey(it.type, it.id, it.action, it.shuffle) }
         if (busyKey != null && busyKey in _busyCollections.value) return
         busyKey?.let { key -> _busyCollections.update { it + key } }
-        scope.launch {
+        val job = scope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             try {
                 executeLocallyNow(request)
             } catch (e: Exception) {
-                logger.e(e) { "Failed to play ${request.title} locally" }
                 if (e is CancellationException) throw e
+                logger.e(e) { "Failed to play ${request.title} locally" }
                 _events.emit(getString(Res.string.player_playback_failed, e.message.orEmpty()))
             } finally {
                 busyKey?.let { key -> _busyCollections.update { it - key } }
             }
         }
+        if (request.action == PlaybackDestinationAction.Play) {
+            pendingLocalPlay?.cancel()
+            pendingLocalPlay = job
+        }
+        job.start()
     }
 
     private suspend fun executeLocallyNow(request: PlaybackDestinationRequest) {

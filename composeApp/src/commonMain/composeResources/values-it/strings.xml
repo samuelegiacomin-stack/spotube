@@ -648,6 +648,7 @@
 
     <!-- Track list -->
     <string name="track_list_sort_original">Originale</string>
+    <string name="track_list_sort_reverse_original">Ordine playlist inverso</string>
     <string name="track_list_sort_title">Titolo</string>
     <string name="track_list_sort_artist">Artista</string>
     <string name="track_list_sort_album">Album</string>

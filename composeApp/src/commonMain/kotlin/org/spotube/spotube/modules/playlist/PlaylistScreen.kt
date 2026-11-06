@@ -149,6 +149,7 @@ fun PlaylistScreen(
         isCurrentTrackPlaying = playerState == PlayerState.PLAYING,
         onTrackClick = viewModel::playPlaylistFromTrack,
         onLoadNextPage = viewModel::loadNextTracksPage,
+        initialSort = org.spotube.spotube.core.ui.component.TrackSortOption.ReverseOriginal,
         onArtistClick = { navigationCommands.navigateTo(Routes.Artist(it.id)) },
         onAlbumClick = { navigationCommands.navigateTo(Routes.Album(it.id)) },
         onTrackOptionsAction = viewModel::handleTrackOptionsAction,

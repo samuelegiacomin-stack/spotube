@@ -56,7 +56,10 @@ import org.spotube.spotube.modules.library.playlist.PlaylistFormController
 import org.spotube.spotube.modules.library.playlist.PlaylistFormData
 import org.spotube.spotube.modules.library.playlist.PlaylistFormUiState
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.spotube.spotube.core.playback.loadCollectionPages
 import org.koin.core.component.KoinComponent
 import org.spotube.spotube.core.i18n.getString
 import spotube.composeapp.generated.resources.Res
@@ -112,6 +115,8 @@ class PlaylistViewModel(
     private val remotePlaybackController: RemotePlaybackController) : ViewModel(), KoinComponent {
     private val logger by injectLogger<PlaylistViewModel>()
 
+    private var dataGeneration = 0L
+    private var completeTracksJob: Job? = null
     private val _state = MutableStateFlow<PlaylistScreenState>(PlaylistScreenState.Loading)
     val uiState: StateFlow<PlaylistScreenState> = _state.asStateFlow()
     private val downloadCollectionId = "playlist:$playlistId"
@@ -188,45 +193,79 @@ class PlaylistViewModel(
         }
     }
 
-    private suspend fun loadInitialData() = runCatching {
+    private suspend fun loadInitialData() {
+        val generation = ++dataGeneration
+        completeTracksJob?.cancel()
         _state.value = PlaylistScreenState.Loading
-        val playlistInfo = repository.getPlaylistInfo(playlistId)
-        val tracksResult = repository.getPlaylistTracks(playlistId)
-
-        tracksResult?.items?.let { savedTracksRepository.isSavedTracks(it.map { item -> item.id }) }
-        _state.value = PlaylistScreenState.Data.Loaded(
-            playlist = playlistInfo?.first,
-            isSaved = playlistInfo?.second ?: false,
-            tracks = tracksResult?.items ?: emptyList(),
-            nextPagination = tracksResult?.nextPagination)
-    }.onFailure { e ->
-        logger.e(e) { "Failed to load playlist" }
-        _state.value = PlaylistScreenState.Error(e.message ?: getString(Res.string.common_unknown_error))
+        try {
+            val playlistInfo = repository.getPlaylistInfo(playlistId)
+            val tracksResult = repository.getPlaylistTracks(playlistId)
+            if (generation != dataGeneration) return
+            _state.value = PlaylistScreenState.Data.Loaded(
+                playlist = playlistInfo?.first,
+                isSaved = playlistInfo?.second ?: false,
+                tracks = tracksResult?.items.orEmpty(),
+                nextPagination = tracksResult?.nextPagination)
+            // Complete in the background so search and reverse order include the tail.
+            loadCompleteTracks()
+            tracksResult?.items?.let { savedTracksRepository.isSavedTracks(it.map { item -> item.id }) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            if (generation == dataGeneration) {
+                logger.e(error) { "Failed to load playlist" }
+                _state.value = PlaylistScreenState.Error(error.message ?: getString(Res.string.common_unknown_error))
+            }
+        }
     }
 
-    suspend fun loadMoreTracks() = runCatching {
-        val currentState = _state.value
-        if (currentState is PlaylistScreenState.Data.Loaded && currentState.nextPagination != null) {
-            _state.value = currentState.toLoadingMore()
-            val result = repository.getPlaylistTracks(playlistId, currentState.nextPagination)
-
-            result?.items?.let { savedTracksRepository.isSavedTracks(it.map { item -> item.id }) }
-            _state.value = PlaylistScreenState.Data.Loaded(
-                playlist = currentState.playlist,
-                isSaved = currentState.isSaved,
-                tracks = currentState.tracks + (result?.items ?: emptyList()),
-                nextPagination = result?.nextPagination,
-                isSaving = currentState.isSaving)
+    suspend fun loadMoreTracks() {
+        val current = _state.value as? PlaylistScreenState.Data.Loaded ?: return
+        val pagination = current.nextPagination ?: return
+        val generation = dataGeneration
+        val loading = current.toLoadingMore()
+        _state.value = loading
+        try {
+            val result = checkNotNull(repository.getPlaylistTracks(playlistId, pagination))
+            if (generation != dataGeneration) return
+            val latest = _state.value as? PlaylistScreenState.Data ?: return
+            _state.value = current.copy(tracks = current.tracks + result.items, nextPagination = result.nextPagination,
+                isSaving = latest.isSaving)
+            savedTracksRepository.isSavedTracks(result.items.map { it.id })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            logger.e(error) { "Failed to load more tracks" }
+            if (generation == dataGeneration) _state.value = current
         }
-    }.onFailure { e ->
-        logger.e(e) { "Failed to load more tracks" }
-        _state.value = PlaylistScreenState.Error(e.message ?: getString(Res.string.common_unknown_error))
+    }
+
+    fun loadCompleteTracks() {
+        val current = _state.value as? PlaylistScreenState.Data.Loaded ?: return
+        if (current.nextPagination == null || completeTracksJob?.isActive == true) return
+        val generation = dataGeneration
+        val loading = current.toLoadingMore()
+        _state.value = loading
+        completeTracksJob = viewModelScope.launch {
+            try {
+                val tracks = loadCollectionPages { repository.getPlaylistTracks(playlistId, it) }
+                if (generation == dataGeneration) {
+                    val latest = _state.value as? PlaylistScreenState.Data ?: return@launch
+                    _state.value = current.copy(tracks = tracks, nextPagination = null, isSaving = latest.isSaving)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                logger.e(error) { "Failed to complete playlist search" }
+                if (generation == dataGeneration) {
+                    _state.value = PlaylistScreenState.Error(error.message ?: getString(Res.string.common_unknown_error))
+                }
+            }
+        }
     }
 
     fun loadNextTracksPage() {
-        viewModelScope.launch {
-            loadMoreTracks()
-        }
+        viewModelScope.launch { loadMoreTracks() }
     }
 
     fun toggleSavedPlaylist() {

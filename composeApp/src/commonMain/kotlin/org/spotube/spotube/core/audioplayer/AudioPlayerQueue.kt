@@ -20,6 +20,13 @@ package org.spotube.spotube.core.audioplayer
 import kotlinx.coroutines.flow.StateFlow
 
 interface AudioPlayerQueue {
+    val supportsProgressiveCollections: Boolean get() = false
+    suspend fun completeCollection(
+        seed: List<QueueEntry>,
+        entries: List<QueueEntry>,
+        collection: QueueCollectionEntry,
+    ): Boolean = false
+
 	/** Synchronous lookup for the HTTP player before UI StateFlows have caught up. */
 	fun findStreamingTrack(trackId: String): QueueEntry.StreamingTrack? =
 		queueFlow.value.filterIsInstance<QueueEntry.StreamingTrack>().firstOrNull { it.track.id == trackId }

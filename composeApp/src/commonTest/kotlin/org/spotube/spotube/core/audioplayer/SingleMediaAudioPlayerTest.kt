@@ -41,6 +41,28 @@ class SingleMediaAudioPlayerTest {
     private suspend fun awaitCondition(predicate: () -> Boolean) = withTimeout(3_000) {
         while (!predicate()) delay(2)
     }
+    @Test fun collectionExpansionPreservesPlaybackAndPositionWithoutReloading() = scenario { player, engine ->
+        player.load(listOf(item("b")), true, 0)
+        engine.callback!!.onTime(4_000)
+        assertTrue(player.replacePlaylistKeepingCurrent(listOf("b"), listOf(item("a"), item("b"), item("c"))))
+        assertEquals(listOf("b"), engine.loads)
+        assertEquals("b", player.currentMediaItemFlow.value?.url)
+        assertEquals(4_000L, player.positionFlow.value.inWholeMilliseconds)
+        assertEquals(PlayerState.PLAYING, player.playerStateFlow.value)
+        player.skipToNext()
+        assertEquals(listOf("b", "c"), engine.loads)
+    }
+    @Test fun obsoleteExpansionCannotReplaceAnEditedQueueOrLosePausedState() = scenario { player, engine ->
+        player.load(listOf(item("a")), true, 0)
+        player.pause()
+        player.addMediaItem(item("user-added"))
+        assertFalse(player.replacePlaylistKeepingCurrent(listOf("a"), listOf(item("a"), item("b"))))
+        assertEquals(listOf("a", "user-added"), player.playlistFlow.value.map { it.url })
+        assertTrue(player.replacePlaylistKeepingCurrent(listOf("a", "user-added"),
+            listOf(item("a"), item("user-added"), item("c"))))
+        assertEquals(PlayerState.PAUSED, player.playerStateFlow.value)
+        assertEquals(listOf("a"), engine.loads)
+    }
     @Test fun automaticallyPlaysEveryLocalAndStreamingItemInOrder() = scenario { player, engine ->
         val urls = (0..19).map { if (it % 2 == 0) "/Music/My song $it.m4a" else "http://127.0.0.1/stream/$it" }
         player.load(urls.map(::item), true, 0)
@@ -51,6 +73,25 @@ class SingleMediaAudioPlayerTest {
         assertEquals(urls, engine.loads)
         engine.callback!!.onState(NativePlayerState.ENDED)
         awaitCondition { player.playerStateFlow.value == PlayerState.COMPLETED }
+    }
+    @Test fun lateCollectionExpansionContinuesOnlyAfterANaturalEnd() = scenario { player, engine ->
+        player.load(listOf(item("a")), true, 0)
+        engine.callback!!.onState(NativePlayerState.ENDED)
+        awaitCondition { player.playerStateFlow.value == PlayerState.COMPLETED }
+        assertTrue(player.replacePlaylistKeepingCurrent(listOf("a"), listOf(item("a"), item("b"))))
+        assertEquals("b", player.currentMediaItemFlow.value?.url)
+        assertEquals(PlayerState.PLAYING, player.playerStateFlow.value)
+        assertEquals(listOf("a", "b"), engine.loads)
+    }
+    @Test fun togglingShuffleDuringPaginationStillAllowsExpansionAndKeepsDuplicates() = scenario { player, engine ->
+        val seed = listOf(item("a"), item("b"))
+        player.load(seed, true, 0)
+        player.shuffle(true)
+        assertTrue(player.replacePlaylistKeepingCurrent(listOf("a", "b"), seed + item("a") + item("c")))
+        assertEquals(listOf("a", "a", "b", "c"), player.playlistFlow.value.map { it.url }.sorted())
+        assertEquals("a", player.currentMediaItemFlow.value?.url)
+        assertTrue(player.shuffleModeFlow.value)
+        assertEquals(listOf("a"), engine.loads)
     }
     @Test fun duplicateAndStaleCallbacksCannotSkipOrStopSuccessor() = scenario { player, engine ->
         player.load(listOf(item("a"), item("b"), item("c")), true, 0)

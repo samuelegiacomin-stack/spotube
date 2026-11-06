@@ -367,8 +367,10 @@ class DownloadManager(
             if (finalPath == null || url == null) {
                 val downloadDir = resolveDownloadDir()
                 val settings = settingsRepository.userSettings.value
-                val info = streamingUrlRepository.resolveStreamInfo(track, request = StreamRequest(
-                    format = settings.downloadMusicFormat, quality = settings.downloadMusicQuality, progressiveOnly = true))
+                val info = resolveDownloadSource {
+                    streamingUrlRepository.resolveStreamInfo(track, request = StreamRequest(
+                        format = settings.downloadMusicFormat, quality = settings.downloadMusicQuality, progressiveOnly = true))
+                }
                     ?: throw DownloadException(getString(Res.string.downloads_error_stream_unresolved))
                 logResolvedStream(item, info)
                 finalPath = downloadDir / buildFilename(item, info)

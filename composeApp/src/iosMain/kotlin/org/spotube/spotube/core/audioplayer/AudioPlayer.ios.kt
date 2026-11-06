@@ -21,7 +21,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.time.Duration
 
-actual class AudioPlayer actual constructor(context: Any) : AudioPlayerInterface {
+actual class AudioPlayer actual constructor(context: Any) : AudioPlayerInterface, SeamlessPlaylistUpdater {
+    override suspend fun replacePlaylistKeepingCurrent(expectedUrls: List<String>, playlist: List<MediaItem>) =
+        delegate.replacePlaylistKeepingCurrent(expectedUrls, playlist)
     actual val context: Any = context
     override suspend fun addMediaItems(mediaItems: List<MediaItem>) = delegate.addMediaItems(mediaItems)
     override suspend fun continueAfterQueueEnd(expectedUrl: String) = delegate.continueAfterQueueEnd(expectedUrl)

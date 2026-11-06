@@ -35,8 +35,18 @@ class CollectionPlaybackHelper(
     private val artistRepository: ArtistRepository,
     private val audioPlayerQueue: AudioPlayerQueue,
     private val blacklistRepository: BlacklistRepository) {
+    private val progressive = ProgressiveCollectionPlayback(audioPlayerQueue, ::filterPlayable)
+
+    private suspend fun filterPlayable(tracks: List<MetadataTrack>): List<QueueEntry> {
+        val trackIds = blacklistRepository.getTracksSnapshot().map { it.id }.toSet()
+        val artistIds = blacklistRepository.getArtistsSnapshot().map { it.id }.toSet()
+        return tracks.filterNot { isTrackBlacklisted(it, trackIds, artistIds) }
+            .map { QueueEntry.StreamingTrack(track = it, url = "") }
+    }
+
     suspend fun playAlbum(albumId: String, shuffle: Boolean = false) {
         if (!shuffle && audioPlayerQueue.isAlbumPlaying(albumId)) return
+        if (progressive.play(QueueCollectionEntry.Album(albumId), shuffle) { albumRepository.getAlbumTracks(albumId, it) }) return
         val entries = fetchAllAlbumTracks(albumId).let { if (shuffle) it.shuffled() else it }
         if (entries.isNotEmpty()) {
             audioPlayerQueue.load(
@@ -74,6 +84,7 @@ class CollectionPlaybackHelper(
                 return
             }
         }
+        if (progressive.play(QueueCollectionEntry.Album(albumId), false, track) { albumRepository.getAlbumTracks(albumId, it) }) return
         val entries = fetchAllAlbumTracks(albumId)
         if (entries.isEmpty()) return
 
@@ -90,6 +101,7 @@ class CollectionPlaybackHelper(
 
     suspend fun playPlaylist(playlistId: String, shuffle: Boolean = false) {
         if (!shuffle && audioPlayerQueue.isPlaylistPlaying(playlistId)) return
+        if (progressive.play(QueueCollectionEntry.Playlist(playlistId), shuffle) { playlistRepository.getPlaylistTracks(playlistId, it) }) return
         val entries = fetchAllPlaylistTracks(playlistId).let { if (shuffle) it.shuffled() else it }
         if (entries.isNotEmpty()) {
             audioPlayerQueue.load(
@@ -127,6 +139,7 @@ class CollectionPlaybackHelper(
                 return
             }
         }
+        if (progressive.play(QueueCollectionEntry.Playlist(playlistId), false, track) { playlistRepository.getPlaylistTracks(playlistId, it) }) return
         val entries = fetchAllPlaylistTracks(playlistId)
         if (entries.isEmpty()) return
 
@@ -143,6 +156,7 @@ class CollectionPlaybackHelper(
 
     suspend fun playSavedTracks(shuffle: Boolean = false) {
         if (!shuffle && audioPlayerQueue.isSavedTracksPlaying()) return
+        if (progressive.play(QueueCollectionEntry.SavedTracks, shuffle) { savedTracksRepository.getSavedTracks(it) }) return
         val entries = fetchAllSavedTracks().let { if (shuffle) it.shuffled() else it }
         if (entries.isNotEmpty()) {
             audioPlayerQueue.load(
@@ -188,6 +202,16 @@ class CollectionPlaybackHelper(
     }
 
     suspend fun playSavedTracksFromTrack(track: MetadataTrack) {
+        if (audioPlayerQueue.isSavedTracksPlaying()) {
+            val index = audioPlayerQueue.getQueue().indexOfFirst {
+                (it as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
+            }
+            if (index >= 0) {
+                audioPlayerQueue.jumpTo(index)
+                return
+            }
+        }
+        if (progressive.play(QueueCollectionEntry.SavedTracks, false, track) { savedTracksRepository.getSavedTracks(it) }) return
         val entries = fetchAllSavedTracks()
         if (entries.isEmpty()) return
 

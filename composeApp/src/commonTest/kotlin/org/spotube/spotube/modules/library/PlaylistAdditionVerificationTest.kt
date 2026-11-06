@@ -16,12 +16,13 @@ class PlaylistAdditionVerificationTest {
             { reads++; 1 }, { _, _ -> listOf("old") })
         assertFalse(confirmed)
         assertEquals(1, writes, "Adding again would risk duplicate songs")
-        assertEquals(3, reads)
+        assertEquals(4, reads)
     }
 
     @Test fun appendedTrackIsVerifiedAtTailOfLargePlaylist() = runTest {
         val pages = mutableListOf<Pair<Int, Int>>()
-        val confirmed = writeAndConfirmPlaylistAddition(listOf("new"), {}, { 5001 },
+        var added = false
+        val confirmed = writeAndConfirmPlaylistAddition(listOf("new"), { added = true }, { if (added) 5001 else 5000 },
             { offset, limit -> pages += offset to limit; listOf("new") })
         assertTrue(confirmed)
         assertEquals(listOf(4951 to 50), pages)
@@ -31,7 +32,7 @@ class PlaylistAdditionVerificationTest {
         var writes = 0
         var reads = 0
         assertTrue(writeAndConfirmPlaylistAddition(listOf("new"), { writes++ },
-            { 2 }, { _, _ -> reads++; if (reads < 3) listOf("old") else listOf("old", "new") }))
+            { if (writes == 0) 1 else 2 }, { _, _ -> reads++; if (reads < 3) listOf("old") else listOf("old", "new") }))
         assertEquals(1, writes)
         assertEquals(3, reads)
     }
@@ -39,7 +40,8 @@ class PlaylistAdditionVerificationTest {
     @Test fun wholeBatchMustBePresentAcrossReadPages() = runTest {
         val tracks = (1..250).map { "track$it" }
         var reads = 0
-        assertTrue(writeAndConfirmPlaylistAddition(tracks, {}, { 1000 }, { offset, limit ->
+        var added = false
+        assertTrue(writeAndConfirmPlaylistAddition(tracks, { added = true }, { if (added) 1000 else 750 }, { offset, limit ->
             reads++
             tracks.drop(offset - 750).take(limit)
         }))
@@ -51,7 +53,7 @@ class PlaylistAdditionVerificationTest {
     @Test fun mutationFailurePreventsReadbackAndPropagatesRootCause() = runTest {
         val error = assertFailsWith<IllegalStateException> {
             writeAndConfirmPlaylistAddition(listOf("new"), { error("NotAuthorized") },
-                { error("Must not read after failed mutation") }, { _, _ -> emptyList() })
+                { 0 }, { _, _ -> error("Must not read after failed mutation") })
         }
         assertEquals("NotAuthorized", error.message)
     }
@@ -59,7 +61,7 @@ class PlaylistAdditionVerificationTest {
     @Test fun cancelledOrFailedReadDoesNotClaimSuccessOrRepeatTheWrite() = runTest {
         var writes = 0
         assertFailsWith<CancellationException> {
-            writeAndConfirmPlaylistAddition(listOf("new"), { writes++ }, { 1 },
+            writeAndConfirmPlaylistAddition(listOf("new"), { writes++ }, { if (writes == 0) 0 else 1 },
                 { _, _ -> throw CancellationException("cancelled") })
         }
         assertEquals(1, writes)
@@ -68,5 +70,12 @@ class PlaylistAdditionVerificationTest {
     @Test fun emptyRequestDoesNoNetworkWork() = runTest {
         assertTrue(writeAndConfirmPlaylistAddition(emptyList(), { error("write") },
             { error("count") }, { _, _ -> error("page") }))
+    }
+
+    @Test fun preexistingTrackDoesNotVerifyASilentNoOp() = runTest {
+        var writes = 0
+        assertFalse(writeAndConfirmPlaylistAddition(listOf("existing"), { writes++ }, { 10 },
+            { _, _ -> listOf("existing") }))
+        assertEquals(1, writes)
     }
 }

@@ -66,6 +66,22 @@ class TrackListVirtualizationTest {
         .toSet()
 
     @Test
+    fun reversePlaylistOrderMakesTheAppendedTrackVisibleAtTheTop() {
+        val tracks = (0 until 2000).map(::track) + track(9999)
+        ImageComposeScene(1000, 800) {
+            SpotubeTheme(UserSettings(theme = Theme.DARK)) {
+                TrackList(tracks = tracks, initialSort = TrackSortOption.ReverseOriginal)
+            }
+        }.use { scene ->
+            repeat(3) { scene.render().close() }
+            val visible = songTitles(scene)
+            assertTrue("Song 9999" in visible, "appended track should be visible without scrolling: $visible")
+            assertTrue("Song 0" !in visible)
+            assertTrue(visible.size in 3..60)
+        }
+    }
+
+    @Test
     fun onlyVisibleRowsAreComposedAndTheEndLoadsMore() {
         val tracks = (0 until 2000).map(::track)
         val listState = LazyListState()

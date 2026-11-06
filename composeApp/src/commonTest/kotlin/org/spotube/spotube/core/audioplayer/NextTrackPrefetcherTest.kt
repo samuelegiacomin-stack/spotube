@@ -5,8 +5,31 @@ package org.spotube.spotube.core.audioplayer
 
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 import kotlin.test.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.test.*
 
 class NextTrackPrefetcherTest {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun resolvesImmediatelyRefreshesBeforeExpiryAndStopsWhenCancelled() = runTest {
+        val requests = mutableListOf<Boolean>()
+        val job = backgroundScope.launch { refreshNextTrackUrl { requests += it } }
+        runCurrent()
+        assertEquals(listOf(false), requests)
+        advanceTimeBy(20_001)
+        assertEquals(listOf(false, true), requests)
+        job.cancel()
+        advanceTimeBy(60_000)
+        assertEquals(2, requests.size)
+    }
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun aTemporaryLookupFailureDoesNotPermanentlyDisableWarming() = runTest {
+        var requests = 0
+        val job = backgroundScope.launch { refreshNextTrackUrl { if (++requests == 1) error("temporary") } }
+        runCurrent()
+        advanceTimeBy(20_001)
+        assertEquals(2, requests)
+        job.cancel()
+    }
     private fun stream(id: String, url: String = "http://127.0.0.1:14769/stream/$id") = QueueEntry.StreamingTrack(
         MetadataTrack(id, id, 100000, null, null, emptyList(), null, null, null, null, null, null), url)
     @Test fun selectsOnlyImmediateNextProxyTrack() {

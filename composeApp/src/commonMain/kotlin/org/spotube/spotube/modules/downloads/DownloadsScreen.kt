@@ -232,7 +232,8 @@ internal fun DownloadListRow(
                     DownloadStatus.Completed -> AppTheme.colors.primary
                     else -> AppTheme.colors.onSurfaceVariant
                 },
-                maxLines = 1, overflow = TextOverflow.Ellipsis
+                maxLines = if (item.status is DownloadStatus.Failed) Int.MAX_VALUE else 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
         if (item.status == DownloadStatus.Downloading || item.status == DownloadStatus.Completed) {

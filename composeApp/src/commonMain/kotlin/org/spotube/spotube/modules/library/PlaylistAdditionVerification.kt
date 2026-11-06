@@ -16,11 +16,14 @@ internal suspend fun writeAndConfirmPlaylistAddition(
     fetchTrackIds: suspend (offset: Int, limit: Int) -> List<String>,
 ): Boolean {
     if (trackIds.isEmpty()) return true
+    val countBefore = fetchCount().coerceAtLeast(0)
     write()
     val expected = trackIds.toSet()
     repeat(3) { attempt ->
         if (attempt > 0) delay(300L)
         val count = fetchCount().coerceAtLeast(0)
+        // An old occurrence alone cannot prove that this mutation added anything.
+        if (count < countBefore + trackIds.size) return@repeat
         val missing = expected.toMutableSet()
         // Adds use BOTTOM_OF_PLAYLIST; inspect enough of the tail for the whole batch.
         var offset = (count - maxOf(50, trackIds.size)).coerceAtLeast(0)

@@ -11,7 +11,7 @@ import org.spotube.spotube.core.server.StreamingUrlRepository
 import org.spotube.spotube.core.server.NextTrackAudioCache
 import org.spotube.spotube.core.server.isPlaybackProxyUrl
 
-/** Resolve only the next streaming URL in the last 15 seconds, within its 30-second cache TTL. */
+/** Prepare the immediate successor during listening, including manual skips early in a song. */
 class NextTrackPrefetcher(player: AudioPlayerInterface, queue: AudioPlayerQueue, repository: StreamingUrlRepository, audioCache: NextTrackAudioCache) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     init {
@@ -35,21 +35,31 @@ class NextTrackPrefetcher(player: AudioPlayerInterface, queue: AudioPlayerQueue,
                 catch (e: Exception) { Logger.w(e) { "Next-track audio preparation unavailable" } }
             }
         }
-        val nearEnd = combine(player.positionFlow, player.durationFlow, player.playerStateFlow, player.loopStateFlow) {
-            position, duration, state, loop ->
-            val remaining = (duration - position).inWholeMilliseconds
-            state == PlayerState.PLAYING && loop != LoopState.ONE && duration.inWholeMilliseconds > 0 && remaining in 0..15_000
-        }.distinctUntilChanged()
         scope.launch {
-            combine(nearEnd, queue.currentQueueEntryFlow, queue.queueFlow) { ready, current, entries ->
+            combine(canWarm, queue.currentQueueEntryFlow, queue.queueFlow) { ready, current, entries ->
                 nextTrackForPrefetch(ready, current, entries)
             }.distinctUntilChangedBy { it?.id }.collectLatest { track ->
-                if (track != null) try {
-                    withTimeoutOrNull(10_000) { repository.resolveStreamInfo(track) }
-                } catch (cancelled: CancellationException) { throw cancelled }
-                catch (e: Exception) { Logger.w(e) { "Next-track preparation unavailable" } }
+                if (track != null) refreshNextTrackUrl { forceRefresh ->
+                    repository.resolveStreamInfo(track, forceRefresh = forceRefresh)
+                }
             }
         }
+    }
+}
+
+/** Refresh before the URL cache's 30s TTL; cancellation stops an obsolete successor. */
+internal suspend fun refreshNextTrackUrl(resolve: suspend (forceRefresh: Boolean) -> Unit) {
+    var forceRefresh = false
+    while (currentCoroutineContext().isActive) {
+        try {
+            withTimeoutOrNull(10_000) { resolve(forceRefresh) }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Logger.w(error) { "Next-track preparation unavailable" }
+        }
+        forceRefresh = true
+        delay(20_000)
     }
 }
 

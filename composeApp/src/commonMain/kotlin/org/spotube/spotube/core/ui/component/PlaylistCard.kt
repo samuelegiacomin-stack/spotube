@@ -19,11 +19,13 @@ package org.spotube.spotube.core.ui.component
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.spotube.plugin_interfaces.plugin_apis.metadata.playlist.MetadataPlaylist
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
+import org.spotube.spotube.core.audioplayer.AudioPlayerInterface
+import org.spotube.spotube.core.audioplayer.PlayerState
+import org.spotube.spotube.core.audioplayer.QueueCollectionEntry
 import org.spotube.spotube.core.navigation.NavigationCommands
 import org.spotube.spotube.core.navigation.Routes
 import org.spotube.spotube.core.playback.CollectionPlaybackHelper
@@ -32,7 +34,6 @@ import org.spotube.spotube.core.remote.PlaybackDestinationAction
 import org.spotube.spotube.core.remote.RemoteCollectionType
 import org.spotube.spotube.core.remote.RemotePlaybackController
 import org.spotube.spotube.core.ui.component.cards.PlayableCard
-import kotlinx.coroutines.launch
 import org.koin.compose.koinInject
 
 @Composable
@@ -45,7 +46,8 @@ fun PlaylistCard(
     remotePlaybackController: RemotePlaybackController = koinInject(),
     listMode: Boolean = false
 ) {
-    val scope = rememberCoroutineScope()
+    val player: AudioPlayerInterface = koinInject()
+    val playerState by player.playerStateFlow.collectAsStateWithLifecycle()
     val currentCollectionEntry by audioPlayerQueue.currentCollectionEntryFlow.collectAsStateWithLifecycle()
     val busyCollections by remotePlaybackController.busyCollections.collectAsStateWithLifecycle()
 
@@ -53,17 +55,14 @@ fun PlaylistCard(
         title = playlist.title,
         subtitle = playlist.description,
         imageURL = playlist.thumbnails.firstOrNull()?.url,
-        isPlaying = currentCollectionEntry?.id == playlist.id,
+        isPlaying = currentCollectionEntry is QueueCollectionEntry.Playlist &&
+            currentCollectionEntry?.id == playlist.id &&
+            (playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING),
         onClick = {
             navigationCommands.navigateTo(Routes.Playlist(playlist.id))
         },
         onPlay = {
-            if (audioPlayerQueue.isPlaylistPlaying(playlist.id)) return@PlayableCard
-            remotePlaybackController.requestCollectionPlay(
-                RemoteCollectionType.Playlist,
-                playlist.id,
-                playlist.title
-            )
+            remotePlaybackController.togglePlaylistPlayback(playlist.id, playlist.title)
         },
         onAddToQueue = {
             remotePlaybackController.requestCollectionAddToQueue(

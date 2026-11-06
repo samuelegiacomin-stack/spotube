@@ -160,6 +160,7 @@ private fun Modifier.trackCardBounds(listState: LazyListState, edgeInsetPx: Int)
 
 enum class TrackSortOption(val label: StringResource) {
     None(Res.string.track_list_sort_original),
+    ReverseOriginal(Res.string.track_list_sort_reverse_original),
     Title(Res.string.track_list_sort_title),
     Artist(Res.string.track_list_sort_artist),
     Album(Res.string.track_list_sort_album),
@@ -178,6 +179,7 @@ fun TrackList(
     headerContent: (@Composable () -> Unit)? = null,
     footerContent: (@Composable () -> Unit)? = null,
     onLoadNextPage: () -> Unit = {},
+    initialSort: TrackSortOption = TrackSortOption.None,
     onTrackClick: (MetadataTrack) -> Unit = {},
     onTrackOptionsAction: (MetadataTrack, TrackOptionsAction) -> Unit = { _, _ -> },
     onArtistClick: (MetadataArtist.Basic) -> Unit = {},
@@ -200,7 +202,7 @@ fun TrackList(
     state: LazyListState? = null) {
     val filterState = rememberTextFieldState()
     val filterQuery = filterState.text.toString()
-    var sortBy by rememberSaveable { mutableStateOf(TrackSortOption.None) }
+    var sortBy by rememberSaveable { mutableStateOf(initialSort) }
     var selectedTrackForOptions by remember { mutableStateOf<MetadataTrack?>(null) }
     var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedTrackIds by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
@@ -222,6 +224,7 @@ fun TrackList(
 
         when (sortBy) {
             TrackSortOption.None -> filtered
+            TrackSortOption.ReverseOriginal -> filtered.asReversed()
             TrackSortOption.Title -> filtered.sortedBy { it.title.lowercase() }
             TrackSortOption.Artist -> filtered.sortedBy {
                 it.artists.firstOrNull()?.name?.lowercase().orEmpty()
@@ -341,7 +344,7 @@ fun TrackList(
                 isError = true)
         }
 
-        if (showEmptyMessage && !isLoading && visibleTracks.isEmpty() && error == null) {
+        if (showEmptyMessage && !isLoading && !isLoadingNextPage && visibleTracks.isEmpty() && error == null) {
             TrackListFeedbackRow(stringResource(Res.string.track_list_no_tracks))
         }
 

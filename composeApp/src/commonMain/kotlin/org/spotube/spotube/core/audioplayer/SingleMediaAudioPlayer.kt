@@ -43,7 +43,7 @@ class SingleMediaAudioPlayer(
     val context: Any,
     private val engine: NativePlayerEngine,
     private val mediaSession: PlayerMediaSession,
-) : AudioPlayerInterface {
+) : AudioPlayerInterface, SeamlessPlaylistUpdater {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val lock = Mutex()
 
@@ -283,6 +283,36 @@ class SingleMediaAudioPlayer(
             }
             _currentMediaItem.tryEmit(currentPlaylist.getOrNull(currentIndex))
         }
+    }
+
+    override suspend fun replacePlaylistKeepingCurrent(
+        expectedUrls: List<String>,
+        playlist: List<MediaItem>,
+    ): Boolean = lock.withLock {
+        if (disposed) return@withLock false
+        val currentUrls = currentPlaylist.map { it.url }
+        if (currentUrls != expectedUrls &&
+            (!shuffleEnabled || currentUrls.sorted() != expectedUrls.sorted())) return@withLock false
+        val current = _currentMediaItem.value ?: return@withLock false
+        if (playlist.none { it.url == current.url }) return@withLock false
+        originalPlaylist.clear()
+        originalPlaylist.addAll(playlist)
+        val expanded = if (shuffleEnabled) {
+            val remaining = playlist.toMutableList()
+            remaining.removeAt(remaining.indexOfFirst { it.url == current.url })
+            listOf(current) + remaining.shuffled()
+        } else playlist
+        currentPlaylist.clear()
+        currentPlaylist.addAll(expanded)
+        currentIndex = currentPlaylist.indexOfFirst { it.url == current.url }
+        // Do not touch engine, generation, position or playback state.
+        _playlist.value = currentPlaylist.toList()
+        // A very short seed may end before pagination finishes. Explicit pause/stop
+        // change the state, so only a natural queue end can resume the new successor.
+        if (_playerState.value == PlayerState.COMPLETED && currentIndex < currentPlaylist.lastIndex) {
+            playIndexLocked(currentIndex + 1)
+        }
+        true
     }
 
     override suspend fun load(

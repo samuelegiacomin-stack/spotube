@@ -143,6 +143,25 @@ class DeviceAudioPlayerQueue(
         }
     }
 
+    override val supportsProgressiveCollections: Boolean get() = audioPlayer is SeamlessPlaylistUpdater
+
+    override suspend fun completeCollection(
+        seed: List<QueueEntry>,
+        entries: List<QueueEntry>,
+        collection: QueueCollectionEntry,
+    ): Boolean {
+        val updater = audioPlayer as? SeamlessPlaylistUpdater ?: return false
+        if (currentCollectionEntryState.value != collection) return false
+        val expectedUrls = resolveMediaItems(seed).map { it.first.url }
+        val resolved = resolveMediaItems(entries)
+        if (currentCollectionEntryState.value != collection) return false
+        // Publish metadata before the engine exposes any of these proxy URLs.
+        entryByMediaUrl.update { it + entriesByUrl(resolved) }
+        val accepted = updater.replacePlaylistKeepingCurrent(expectedUrls, resolved.map { it.first })
+        if (accepted) persistQueueStateIfReady()
+        return accepted
+    }
+
     override suspend fun load(
         entries: List<QueueEntry>,
         autoPlay: Boolean,
