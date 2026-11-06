@@ -16,6 +16,8 @@
   -->
 
 <resources>
+    <string name="startup_failed">Impossibile avviare Spotube.</string>
+    <string name="startup_restart">Chiudi e riapri l’app per riprovare.</string>
     <string name="player_track_action_failed">Impossibile completare l’azione sul brano: %1$s</string>
     <string name="player_playlist_added">%1$s aggiunto alla playlist</string>
     <string name="player_radio_unavailable">La radio non ha restituito suggerimenti riproducibili</string>

@@ -16,6 +16,8 @@
   -->
 
 <resources>
+    <string name="startup_failed">Unable to start Spotube.</string>
+    <string name="startup_restart">Close and reopen the app to try again.</string>
     <string name="player_track_action_failed">Could not complete the track action: %1$s</string>
     <string name="player_playlist_added">Added %1$s to the playlist</string>
     <string name="player_radio_unavailable">No playable radio recommendations were returned</string>

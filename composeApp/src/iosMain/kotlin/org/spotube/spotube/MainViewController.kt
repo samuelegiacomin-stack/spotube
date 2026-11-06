@@ -17,21 +17,16 @@
 
 package org.spotube.spotube
 
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.window.ComposeUIViewController
 import org.spotube.spotube.core.webview.SafariUserAgent
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import org.koin.core.component.KoinComponent
-import org.koin.core.component.inject
+import org.spotube.spotube.core.startup.StartupContent
 
 fun MainViewController() = ComposeUIViewController(configure = {
     IosApplicationBootstrap.start()
     SafariUserAgent.prime()
-}) { App() }
+}) {
+    val startup by IosApplicationBootstrap.state.collectAsState()
+    StartupContent(startup, onRetry = IosApplicationBootstrap::start) { App() }
+}
