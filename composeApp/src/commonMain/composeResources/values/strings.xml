@@ -16,6 +16,12 @@
   -->
 
 <resources>
+    <string name="player_track_action_failed">Could not complete the track action: %1$s</string>
+    <string name="player_playlist_added">Added %1$s to the playlist</string>
+    <string name="player_radio_unavailable">No playable radio recommendations were returned</string>
+    <string name="player_radio_started">Started radio for %1$s</string>
+    <string name="player_repeat_one_badge">1</string>
+    <string name="playlist_add_unconfirmed">Spotify did not confirm that the tracks are in the playlist. Check your connection and plugin version, then retry.</string>
     <string name="playlist_write_failed">Could not update the playlist</string>
     <string name="playlist_login_required">Sign in to the metadata plugin to edit playlists</string>
     <string name="queue_title">Queue</string>
@@ -1112,6 +1118,15 @@
     <string name="media_browser_saved_tracks">Saved Tracks</string>
     <string name="media_browser_top_tracks">Top Tracks</string>
     <string name="playlist_download_button">Download playlist</string>
+    <string name="saved_tracks_download_button">Download all favorites</string>
+    <string name="collection_download_preparing">Loading all tracks for download…</string>
+    <string name="collection_download_preparing_button">Downloading…</string>
+    <string name="collection_download_busy_button">Downloading %1$d%</string>
+    <string name="collection_download_load_failed">Could not load all tracks for download. Try again.</string>
+    <string name="collection_download_empty">No tracks to download.</string>
+    <string name="collection_download_progress">%1$d% · %2$d of %3$d tracks downloaded</string>
+    <string name="collection_download_failed_count">Failed tracks: %1$d. Tap download again to retry.</string>
+    <string name="collection_download_cancelled_count">Cancelled tracks: %1$d. Tap download again to retry.</string>
     <string name="playlist_download_failed">Could not load the playlist for download. Try again.</string>
     <string name="downloads_progress_percent">%1$d%</string>
     <string name="player_playback_failed">Playback failed: %1$s</string>

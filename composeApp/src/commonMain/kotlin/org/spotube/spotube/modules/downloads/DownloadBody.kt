@@ -11,12 +11,14 @@ internal suspend fun copyDownloadBody(
     channel: ByteReadChannel,
     sink: BufferedSink,
     expectedBytes: Long,
+    beforeRead: suspend () -> Unit = {},
     onChunk: (Long) -> Unit
 ) {
     val buffer = ByteArray(256 * 1024)
     var received = 0L
     while (true) {
         currentCoroutineContext().ensureActive()
+        beforeRead()
         val count = channel.readAvailable(buffer, 0, buffer.size)
         if (count < 0) break
         if (count == 0) continue

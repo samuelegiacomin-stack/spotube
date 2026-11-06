@@ -42,6 +42,7 @@ import org.spotube.spotube.core.ui.component.TrackOptionsAction
 import org.spotube.spotube.core.ui.component.TrackOptionsContext
 import org.spotube.spotube.modules.blacklist.BlacklistRepository
 import org.spotube.spotube.modules.downloads.DownloadManager
+import org.spotube.spotube.modules.downloads.CollectionDownloadService
 import org.spotube.spotube.modules.library.LibraryRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -100,11 +101,15 @@ class SavedTracksViewModel(
     private val libraryRepository: LibraryRepository,
     private val shareService: ShareService,
     private val downloadManager: DownloadManager,
+    private val collectionDownloads: CollectionDownloadService,
     private val remotePlaybackController: RemotePlaybackController) : ViewModel(), KoinComponent {
     private val logger by injectLogger<SavedTracksViewModel>()
 
     private val _state = MutableStateFlow<SavedTracksScreenState>(SavedTracksScreenState.Loading)
     val uiState: StateFlow<SavedTracksScreenState> = _state.asStateFlow()
+    val downloadProgress = collectionDownloads.observe(SAVED_TRACKS_COLLECTION_ID)
+        .stateIn(viewModelScope, SharingStarted.Eagerly,
+            collectionDownloads.currentProgress(SAVED_TRACKS_COLLECTION_ID))
 
     /** Loading flags for this screen's play / shuffle / add-to-queue buttons. */
     val playbackUiState: StateFlow<CollectionPlaybackUiState> = remotePlaybackController
@@ -313,6 +318,10 @@ class SavedTracksViewModel(
 
     fun downloadTracks(tracks: List<MetadataTrack>) {
         tracks.forEach { track -> downloadManager.enqueue(track) }
+    }
+
+    fun downloadSavedTracks() {
+        collectionDownloads.downloadAll(SAVED_TRACKS_COLLECTION_ID, repository::getSavedTracks)
     }
 
     fun isTrackBlacklisted(track: MetadataTrack): Boolean {

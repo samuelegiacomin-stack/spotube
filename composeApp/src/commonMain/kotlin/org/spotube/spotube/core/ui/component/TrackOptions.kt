@@ -246,13 +246,15 @@ fun TrackOptionsSheetHeader(track: MetadataTrack) {
 }
 
 @Composable
-private fun buildTrackMenuItems(
+internal fun buildTrackMenuItems(
     track: MetadataTrack,
     state: TrackOptionsState,
     onAction: (TrackOptionsAction) -> Unit,
     onAlbumClick: () -> Unit,
     isInJam: Boolean = false,
-    isJamGuest: Boolean = false): List<AdaptiveMenuItem> = buildList {
+    isJamGuest: Boolean = false,
+    isRadioLoading: Boolean = false,
+    downloadItem: AdaptiveMenuItem? = null): List<AdaptiveMenuItem> = buildList {
     if (isInJam) {
         add(
             AdaptiveMenuItem(
@@ -265,6 +267,7 @@ private fun buildTrackMenuItems(
         AdaptiveMenuItem(
             icon = Iconsax.IconsaxMusicCircle,
             label = stringResource(Res.string.track_options_start_radio),
+            enabled = !isJamGuest && !isRadioLoading,
             onClick = { onAction(TrackOptionsAction.StartRadio) }))
 
     // A guest's queue is the shared jam queue — mutating it locally is not
@@ -311,7 +314,7 @@ private fun buildTrackMenuItems(
             label = stringResource(Res.string.track_options_add_to_playlist),
             onClick = { onAction(TrackOptionsAction.AddToPlaylist) }))
 
-    add(
+    add(downloadItem ?:
         AdaptiveMenuItem(
             icon = Iconsax.IconsaxDirectboxReceive,
             label = stringResource(Res.string.track_options_download),

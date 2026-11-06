@@ -27,7 +27,10 @@ import org.spotube.millennium.composables.MillenniumIcon
 import org.spotube.millennium.composables.MillenniumIconButton
 import org.spotube.millennium.composables.MillenniumIconButtonStyle
 import org.spotube.millennium.composables.MillenniumSeparator
+import org.spotube.millennium.composables.MillenniumCircularProgress
+import org.spotube.spotube.modules.downloads.CollectionDownloadProgress
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +52,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -97,8 +103,8 @@ fun CollectionDetails(
     showFollowButton: Boolean = true,
     onEdit: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
-    isDownloadLoading: Boolean = false,
-    downloadError: String? = null,
+    downloadButtonLabel: String? = null,
+    downloadProgress: CollectionDownloadProgress = CollectionDownloadProgress(),
     sharedElementKey: String? = null) {
     Box(modifier = modifier.fillMaxWidth()) {
         val isCompact = currentWindowWidthBreakpoint() isBelow WindowBreakpoints.Medium
@@ -203,15 +209,61 @@ fun CollectionDetails(
         val downloadControls = @Composable {
             if (onDownload != null) {
                 MillenniumButton(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().playerPressFeedback(enabled = !downloadProgress.isBusy),
                     onClick = onDownload,
-                    loading = isDownloadLoading,
+                    enabled = !downloadProgress.isBusy,
                     style = MillenniumButtonStyle.Secondary) {
-                    MillenniumIcon(Iconsax.IconsaxDirectboxReceive, contentDescription = null)
-                    TextWithShimmer(text = stringResource(Res.string.playlist_download_button))
+                    if (downloadProgress.isPreparing) {
+                        MillenniumCircularProgress(size = 24.dp)
+                    } else if (downloadProgress.isBusy) {
+                        val accent = AppTheme.colors.primary
+                        Box(Modifier.size(24.dp), contentAlignment = Alignment.Center) {
+                            Canvas(Modifier.size(24.dp)) {
+                                val stroke = 2.dp.toPx()
+                                val diameter = size.minDimension
+                                drawArc(
+                                    color = accent,
+                                    startAngle = -90f,
+                                    sweepAngle = 360f * downloadProgress.progress,
+                                    useCenter = false,
+                                    style = Stroke(width = stroke),
+                                    topLeft = Offset(stroke / 2f, stroke / 2f),
+                                    size = Size(diameter - stroke, diameter - stroke))
+                            }
+                            MillenniumIcon(Iconsax.IconsaxDirectboxReceive,
+                                contentDescription = null, modifier = Modifier.size(14.dp))
+                        }
+                    } else {
+                        MillenniumIcon(Iconsax.IconsaxDirectboxReceive, contentDescription = null)
+                    }
+                    TextWithShimmer(text = when {
+                        downloadProgress.isPreparing -> stringResource(Res.string.collection_download_preparing_button)
+                        downloadProgress.isBusy -> stringResource(Res.string.collection_download_busy_button, downloadProgress.percent)
+                        else -> downloadButtonLabel ?: stringResource(Res.string.playlist_download_button)
+                    })
                 }
-                if (downloadError != null) {
-                    Text(stringResource(Res.string.playlist_download_failed), color = AppTheme.colors.error)
+                if (downloadProgress.isPreparing) {
+                    Text(stringResource(Res.string.collection_download_preparing),
+                        style = AppTheme.typography.labelSmall)
+                } else if (downloadProgress.preparationFailed) {
+                    Text(stringResource(Res.string.collection_download_load_failed), color = AppTheme.colors.error)
+                } else if (downloadProgress.hasBatch) {
+                    if (downloadProgress.totalCount == 0) {
+                        Text(stringResource(Res.string.collection_download_empty),
+                            style = AppTheme.typography.labelSmall)
+                    } else {
+                        Text(stringResource(Res.string.collection_download_progress,
+                            downloadProgress.percent, downloadProgress.completedCount, downloadProgress.totalCount),
+                            style = AppTheme.typography.labelSmall)
+                        if (downloadProgress.failedCount > 0) {
+                            Text(stringResource(Res.string.collection_download_failed_count, downloadProgress.failedCount),
+                                color = AppTheme.colors.error, style = AppTheme.typography.labelSmall)
+                        }
+                        if (downloadProgress.cancelledCount > 0) {
+                            Text(stringResource(Res.string.collection_download_cancelled_count, downloadProgress.cancelledCount),
+                                style = AppTheme.typography.labelSmall)
+                        }
+                    }
                 }
             }
         }

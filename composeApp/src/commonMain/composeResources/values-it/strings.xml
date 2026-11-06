@@ -16,6 +16,12 @@
   -->
 
 <resources>
+    <string name="player_track_action_failed">Impossibile completare l’azione sul brano: %1$s</string>
+    <string name="player_playlist_added">%1$s aggiunto alla playlist</string>
+    <string name="player_radio_unavailable">La radio non ha restituito suggerimenti riproducibili</string>
+    <string name="player_radio_started">Radio avviata per %1$s</string>
+    <string name="player_repeat_one_badge">1</string>
+    <string name="playlist_add_unconfirmed">Spotify non ha confermato la presenza dei brani nella playlist. Controlla la connessione e la versione del plugin, poi riprova.</string>
     <string name="playlist_write_failed">Impossibile aggiornare la playlist</string>
     <string name="playlist_login_required">Accedi al plugin dei metadati per modificare le playlist</string>
     <string name="queue_title">Coda</string>
@@ -932,6 +938,15 @@
     <string name="media_browser_saved_tracks">Brani salvati</string>
     <string name="media_browser_top_tracks">Brani più popolari</string>
     <string name="playlist_download_button">Scarica playlist</string>
+    <string name="saved_tracks_download_button">Scarica tutti i preferiti</string>
+    <string name="collection_download_preparing">Caricamento di tutti i brani da scaricare…</string>
+    <string name="collection_download_preparing_button">Scaricando…</string>
+    <string name="collection_download_busy_button">Scaricando %1$d%</string>
+    <string name="collection_download_load_failed">Impossibile caricare tutti i brani da scaricare. Riprova.</string>
+    <string name="collection_download_empty">Nessun brano da scaricare.</string>
+    <string name="collection_download_progress">%1$d% · %2$d brani scaricati su %3$d</string>
+    <string name="collection_download_failed_count">Brani non riusciti: %1$d. Tocca di nuovo Scarica per riprovare.</string>
+    <string name="collection_download_cancelled_count">Brani annullati: %1$d. Tocca di nuovo Scarica per riprovare.</string>
     <string name="playlist_download_failed">Impossibile caricare la playlist da scaricare. Riprova.</string>
     <string name="downloads_progress_percent">%1$d%</string>
     <string name="player_playback_failed">Riproduzione non riuscita: %1$s</string>

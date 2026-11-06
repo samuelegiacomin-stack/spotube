@@ -18,8 +18,12 @@ import ComposeApp
 
 @main
 struct iOSApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     init() {
         registerNativePlayerEngine()
+        NativeDownloadRegistry.shared.engine = BackgroundDownloadEngine.shared
+        IosApplicationBootstrap.shared.start()
     }
 
     var body: some Scene {

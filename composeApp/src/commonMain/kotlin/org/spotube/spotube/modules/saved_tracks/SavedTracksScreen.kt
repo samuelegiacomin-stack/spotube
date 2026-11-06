@@ -46,6 +46,7 @@ fun SavedTracksScreen(
     navigationCommands: NavigationCommands
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    val downloadProgress by viewModel.downloadProgress.collectAsStateWithLifecycle()
     val playbackUiState by viewModel.playbackUiState.collectAsStateWithLifecycle()
     val jamRoomService: JamRoomService = koinInject()
     val jamActive by jamRoomService.role.map { it != null }
@@ -79,6 +80,9 @@ fun SavedTracksScreen(
         onPlay = viewModel::playSavedTracks,
         onShufflePlay = viewModel::shufflePlaySavedTracks,
         onAddToQueue = viewModel::addSavedTracksToQueue,
+        onDownload = if (dataState != null) viewModel::downloadSavedTracks else null,
+        downloadButtonLabel = stringResource(Res.string.saved_tracks_download_button),
+        downloadProgress = downloadProgress,
         isPlaying = isPlaying,
         isFollowing = false,
         onFollowClick = {},

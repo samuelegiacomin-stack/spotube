@@ -17,6 +17,8 @@
 
 package org.spotube.spotube.modules.library
 
+import spotube.composeapp.generated.resources.playlist_add_unconfirmed
+
 import org.spotube.plugin_interfaces.plugin_apis.metadata.album.MetadataAlbum
 import org.spotube.plugin_interfaces.plugin_apis.metadata.artist.MetadataArtist
 import org.spotube.plugin_interfaces.plugin_apis.metadata.common.PaginationResult
@@ -366,7 +368,16 @@ class LibraryRepository(
                 ?: error(getString(Res.string.playlist_login_required))
             pluginManager.withScope {
                 plugin.use {
-                    metadataPlaylistAPI.addTracksToPlaylist(playlistId, trackIds)
+                    val confirmed = writeAndConfirmPlaylistAddition(
+                        trackIds = trackIds,
+                        write = { metadataPlaylistAPI.addTracksToPlaylist(playlistId, trackIds) },
+                        fetchCount = { metadataPlaylistAPI.getPlaylist(playlistId).trackCount },
+                        fetchTrackIds = { offset, limit ->
+                            metadataPlaylistAPI.getPlaylistTracks(
+                                playlistId, PaginationStrategy.Offset(offset, limit))
+                                .items.map { it.id }
+                        })
+                    check(confirmed) { getString(Res.string.playlist_add_unconfirmed) }
                 }
             }
             playlistCache.invalidateAll()

@@ -19,7 +19,7 @@ package org.spotube.spotube.core.server
 
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 import org.spotube.spotube.core.paths.Paths
-import org.spotube.spotube.modules.settings.SettingsRepository
+import org.spotube.spotube.modules.settings.UserSettingsSource
 import io.ktor.http.ContentType
 import io.ktor.http.Headers
 import io.ktor.http.HeadersBuilder
@@ -31,6 +31,9 @@ import io.ktor.server.response.respond
 import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okio.FileSystem
@@ -39,6 +42,7 @@ import okio.Path.Companion.toPath
 import okio.SYSTEM
 import okio.buffer
 import okio.use
+import okio.ByteString.Companion.encodeUtf8
 
 @Serializable
 data class CacheIndex(
@@ -51,13 +55,22 @@ data class CacheEntry(
     val filename: String,
     val sizeBytes: Long,
     val createdAtMs: Long,
-    val contentType: String = "application/octet-stream")
+    val contentType: String = "application/octet-stream",
+    val context: String? = null)
+
+internal data class CacheWriteTicket(val directory: Path, val revision: Long, val context: String?)
 
 class CacheManager(
     private val paths: Paths,
-    private val settingsRepository: SettingsRepository) {
-    private val fileSystem: FileSystem = FileSystem.SYSTEM
+    private val settingsRepository: UserSettingsSource,
+    private val audioContext: () -> String? = { null },
+    private val fileSystem: FileSystem = FileSystem.SYSTEM) {
     private val cacheMutex: Mutex = Mutex()
+    internal val writers = CacheWriteCoordinator()
+    internal val playbackNetwork = PlaybackNetworkActivity()
+    private val revisions = mutableMapOf<String, Long>()
+    private val _changes = MutableStateFlow(0L)
+    internal val changes = _changes.asStateFlow()
     private val json: Json = Json { ignoreUnknownKeys = true }
 
     companion object {
@@ -81,10 +94,10 @@ class CacheManager(
         }
     }
 
-    private fun getCacheIndexPath(): Path = resolveCacheDir() / cacheIndexFileName
+    private fun getCacheIndexPath(directory: Path): Path = directory / cacheIndexFileName
 
-    fun readCacheIndex(): CacheIndex {
-        val indexPath = getCacheIndexPath()
+    fun readCacheIndex(directory: Path = resolveCacheDir()): CacheIndex {
+        val indexPath = getCacheIndexPath(directory)
         if (!fileSystem.exists(indexPath)) return CacheIndex()
         return runCatching {
             fileSystem.source(indexPath).buffer().use { source ->
@@ -93,38 +106,47 @@ class CacheManager(
         }.getOrDefault(CacheIndex())
     }
 
-    fun writeCacheIndex(index: CacheIndex) {
-        val indexPath = getCacheIndexPath()
-        fileSystem.createDirectories(indexPath.parent ?: resolveCacheDir())
-        fileSystem.sink(indexPath).buffer().use { sink ->
+    fun writeCacheIndex(index: CacheIndex, directory: Path = resolveCacheDir()) {
+        val indexPath = getCacheIndexPath(directory)
+        fileSystem.createDirectories(directory)
+        val temporary = indexPath.parent!! / "cache_index.json.tmp"
+        fileSystem.sink(temporary).buffer().use { sink ->
             sink.writeUtf8(json.encodeToString(index))
         }
+        fileSystem.atomicMove(temporary, indexPath)
     }
 
     fun findCachedEntry(trackId: String): Pair<Path, CacheEntry>? {
-        val index = readCacheIndex()
+        val directory = resolveCacheDir()
+        val index = readCacheIndex(directory)
         val entry = index.entries.firstOrNull { it.trackId == trackId } ?: return null
-        val filePath = resolveCacheDir() / entry.filename.toPath()
+        if (entry.context != audioContext()) return null
+        val filePath = directory / entry.filename.toPath()
         return if (fileSystem.exists(filePath)) filePath to entry else null
     }
 
     suspend fun invalidateCacheEntry(trackId: String) {
         cacheMutex.withLock {
-            val index = readCacheIndex()
-            val entry = index.entries.firstOrNull { it.trackId == trackId } ?: return
-            val filePath = resolveCacheDir() / entry.filename.toPath()
-            if (fileSystem.exists(filePath)) {
-                fileSystem.delete(filePath)
+            revisions[trackId] = (revisions[trackId] ?: 0L) + 1
+            val directory = resolveCacheDir()
+            val index = readCacheIndex(directory)
+            val entry = index.entries.firstOrNull { it.trackId == trackId }
+            if (entry != null) {
+                val filePath = directory / entry.filename.toPath()
+                if (fileSystem.exists(filePath)) fileSystem.delete(filePath)
+                writeCacheIndex(index.copy(entries = index.entries.filter { it.trackId != trackId }), directory)
             }
-            writeCacheIndex(index.copy(entries = index.entries.filter { it.trackId != trackId }))
+            _changes.update { it + 1 }
         }
     }
 
     fun resolveCacheFilename(track: MetadataTrack, contentType: String?): String {
-        val artists = track.artists.joinToString(", ") { it.name }.sanitizeFilenamePart()
-        val title = track.title.sanitizeFilenamePart()
+        // Keep the complete UTF-8 filename below iOS's byte limit, including staging suffixes.
+        val artists = track.artists.joinToString(", ") { it.name }.sanitizeFilenamePart().take(24)
+        val title = track.title.sanitizeFilenamePart().take(24)
         val ext = contentTypeToExtension(contentType)
-        return "$artists - $title.$ext"
+        val identity = "${track.id}|${audioContext()}".encodeUtf8().sha256().hex().take(12)
+        return "$artists - $title [$identity].$ext"
     }
 
     suspend fun evictIfNeeded() {
@@ -135,7 +157,7 @@ class CacheManager(
             val cacheDir = resolveCacheDir()
             if (!fileSystem.exists(cacheDir)) return
 
-            val index = readCacheIndex()
+            val index = readCacheIndex(cacheDir)
             val sorted = index.entries.sortedBy { it.createdAtMs }.toMutableList()
 
             var totalSize = sorted.sumOf { it.sizeBytes }
@@ -150,26 +172,44 @@ class CacheManager(
                 totalSize -= entry.sizeBytes
             }
 
-            writeCacheIndex(index.copy(entries = sorted))
+            writeCacheIndex(index.copy(entries = sorted), cacheDir)
+            if (sorted.size != index.entries.size) _changes.update { it + 1 }
         }
     }
 
-    suspend fun commitCacheEntry(
+    internal suspend fun writeTicket(trackId: String): CacheWriteTicket = cacheMutex.withLock {
+        CacheWriteTicket(resolveCacheDir(), revisions[trackId] ?: 0L, audioContext())
+    }
+
+    /** Publish only complete audio, and never resurrect an invalidated alternative source. */
+    internal suspend fun publishCacheFile(
         trackId: String,
+        ticket: CacheWriteTicket,
+        temporaryFile: Path,
         filename: String,
         sizeBytes: Long,
-        contentType: String) {
+        contentType: String): Boolean {
         val entry = CacheEntry(
             trackId = trackId,
             filename = filename,
             sizeBytes = sizeBytes,
             createdAtMs = kotlin.time.Clock.System.now().toEpochMilliseconds(),
-            contentType = contentType)
-        cacheMutex.withLock {
-            val index = readCacheIndex()
+            contentType = contentType,
+            context = ticket.context)
+        return cacheMutex.withLock {
+            if (ticket.directory != resolveCacheDir() || ticket.revision != (revisions[trackId] ?: 0L) ||
+                ticket.context != audioContext() ||
+                !settingsRepository.userSettings.value.enableMusicCaching) return@withLock false
+            val index = readCacheIndex(ticket.directory)
+            fileSystem.atomicMove(temporaryFile, ticket.directory / filename)
             writeCacheIndex(CacheIndex(
                 entries = index.entries.filter { it.trackId != trackId } + entry
-            ))
+            ), ticket.directory)
+            index.entries.filter { it.trackId == trackId && it.filename != filename }.forEach {
+                runCatching { fileSystem.delete(ticket.directory / it.filename, mustExist = false) }
+            }
+            _changes.update { it + 1 }
+            true
         }
     }
 

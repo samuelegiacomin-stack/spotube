@@ -18,10 +18,6 @@
 package org.spotube.spotube.modules.shell
 
 
-import org.spotube.millennium.composables.MillenniumDropdownMenuItem
-import org.spotube.spotube.resources.iconsax.IconsaxCd
-import org.spotube.spotube.resources.iconsax.IconsaxMoon
-import org.spotube.spotube.resources.iconsax.IconsaxInformation
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -37,14 +33,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import org.spotube.millennium.composables.MillenniumSnackbarHost
+import org.spotube.millennium.composables.MillenniumSnackbarHostState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -53,7 +51,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
-import com.composeunstyled.AnchorSide
 import com.composeunstyled.Text
 import com.composeunstyled.LocalTextStyle
 import dev.chrisbanes.haze.HazeState
@@ -62,6 +59,7 @@ import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
 import org.spotube.spotube.core.audioplayer.AudioPlayerInterface
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
+import org.spotube.spotube.core.ui.component.playerPressFeedback
 import org.spotube.spotube.core.audioplayer.LoopState
 import org.spotube.spotube.core.audioplayer.QueueEntry
 import org.spotube.spotube.core.jam.JamRole
@@ -74,7 +72,6 @@ import org.spotube.spotube.modules.downloads.DownloadsViewModel
 import org.spotube.spotube.modules.saved_tracks.SAVED_TRACKS_COLLECTION_ID
 import org.spotube.spotube.modules.saved_tracks.SavedTracksViewModel
 import org.spotube.spotube.resources.iconsax.Iconsax
-import org.spotube.spotube.resources.iconsax.Iconsax3DotsMore
 import org.spotube.spotube.resources.iconsax.IconsaxDirectboxReceive
 import org.spotube.spotube.resources.iconsax.IconsaxMusic
 import org.spotube.spotube.resources.iconsax.IconsaxMusicFilter
@@ -83,8 +80,6 @@ import org.spotube.spotube.resources.iconsax.IconsaxPause
 import org.spotube.spotube.resources.iconsax.IconsaxPlay
 import org.spotube.spotube.resources.iconsax.IconsaxPrevious
 import org.spotube.spotube.resources.iconsax.IconsaxRepeatMusic
-import org.spotube.spotube.resources.iconsax.IconsaxRepeateMusic
-import org.spotube.spotube.resources.iconsax.IconsaxRepeateOne
 import org.spotube.spotube.resources.iconsax.IconsaxShuffle
 import org.spotube.spotube.resources.iconsax.IconsaxVolumeCross
 import org.spotube.spotube.resources.iconsax.IconsaxVolumeHigh
@@ -96,16 +91,12 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import org.koin.core.parameter.parametersOf
-import org.spotube.millennium.composables.MillenniumDropdownMenu
 import org.spotube.millennium.composables.MillenniumIcon
 import org.spotube.millennium.composables.MillenniumIconButton
 import org.spotube.millennium.composables.MillenniumIconButtonStyle
 import org.spotube.millennium.composables.MillenniumSeparator
 import org.spotube.millennium.composables.MillenniumSlider
 import spotube.composeapp.generated.resources.Res
-import spotube.composeapp.generated.resources.player_go_to_album
-import spotube.composeapp.generated.resources.player_sleep_timer
-import spotube.composeapp.generated.resources.player_track_details
 import kotlin.time.Duration.Companion.milliseconds
 import spotube.composeapp.generated.resources.player_alternative_source_content_description
 import spotube.composeapp.generated.resources.player_disable_shuffle_content_description
@@ -115,7 +106,6 @@ import spotube.composeapp.generated.resources.player_loop_mode_all
 import spotube.composeapp.generated.resources.player_loop_mode_none
 import spotube.composeapp.generated.resources.player_loop_mode_one
 import spotube.composeapp.generated.resources.player_lyrics
-import spotube.composeapp.generated.resources.player_more_options_content_description
 import spotube.composeapp.generated.resources.player_mute_content_description
 import spotube.composeapp.generated.resources.player_next_content_description
 import spotube.composeapp.generated.resources.player_pause_content_description
@@ -160,6 +150,10 @@ fun AppLargePlayer(
     val currentEntry by audioPlayerQueue.currentQueueEntryFlow.collectAsStateWithLifecycle()
     val currentTrack = (currentEntry as? QueueEntry.StreamingTrack)?.track
     val playerOptionsUiState by playerOptionsViewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { MillenniumSnackbarHostState() }
+    LaunchedEffect(playerOptionsViewModel) {
+        playerOptionsViewModel.events.collect { snackbarHostState.showSnackbar(it) }
+    }
     val navigationCommands: NavigationCommands = koinInject()
     var isSeeking by remember { mutableStateOf(false) }
     var seekProgress by remember { mutableFloatStateOf(playerUiState.progress) }
@@ -335,21 +329,18 @@ fun AppLargePlayer(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         MillenniumIconButton(
+                            modifier = Modifier.playerModeSelection(playerUiState.isShuffling).playerPressFeedback(!isJamGuest),
                             onClick = ::onShuffleToggle,
                             enabled = !isJamGuest,
-                            style = if (playerUiState.isShuffling) MillenniumIconButtonStyle.Secondary else MillenniumIconButtonStyle.Quiet
+                            style = MillenniumIconButtonStyle.Quiet
                         ) {
-                            MillenniumIcon(
-                                Iconsax.IconsaxShuffle,
+                            PlayerModeIcon(
+                                icon = Iconsax.IconsaxShuffle,
                                 contentDescription = stringResource(if (playerUiState.isShuffling) Res.string.player_disable_shuffle_content_description else Res.string.player_enable_shuffle_content_description),
-                                tint = if (playerUiState.isShuffling) {
-                                    AppTheme.colors.primary
-                                } else {
-                                    AppTheme.colors.onSurfaceVariant
-                                }
-                            )
+                                active = playerUiState.isShuffling)
                         }
                         MillenniumIconButton(
+                            modifier = Modifier.playerPressFeedback(!isJamGuest),
                             onClick = ::onSkipPrevious,
                             enabled = !isJamGuest,
                             style = MillenniumIconButtonStyle.Quiet
@@ -357,6 +348,7 @@ fun AppLargePlayer(
                             MillenniumIcon(Iconsax.IconsaxPrevious, contentDescription = stringResource(Res.string.player_previous_content_description))
                         }
                         MillenniumIconButton(
+                            modifier = Modifier.playerPressFeedback(),
                             onClick = ::onPlayPause,
                             style = MillenniumIconButtonStyle.Primary
                         ) {
@@ -367,6 +359,7 @@ fun AppLargePlayer(
                             )
                         }
                         MillenniumIconButton(
+                            modifier = Modifier.playerPressFeedback(!isJamGuest),
                             onClick = ::onSkipNext,
                             enabled = !isJamGuest,
                             style = MillenniumIconButtonStyle.Quiet
@@ -374,23 +367,16 @@ fun AppLargePlayer(
                             MillenniumIcon(Iconsax.IconsaxNext, contentDescription = stringResource(Res.string.player_next_content_description))
                         }
                         MillenniumIconButton(
+                            modifier = Modifier.playerModeSelection(playerUiState.loopState != LoopState.NONE).playerPressFeedback(!isJamGuest),
                             onClick = ::onLoopToggle,
                             enabled = !isJamGuest,
-                            style = if (playerUiState.loopState == LoopState.NONE) MillenniumIconButtonStyle.Quiet else MillenniumIconButtonStyle.Secondary
+                            style = MillenniumIconButtonStyle.Quiet
                         ) {
-                            MillenniumIcon(
-                                imageVector = when (playerUiState.loopState) {
-                                    LoopState.NONE -> Iconsax.IconsaxRepeateMusic
-                                    LoopState.ONE -> Iconsax.IconsaxRepeateOne
-                                    LoopState.ALL -> Iconsax.IconsaxRepeatMusic
-                                },
+                            PlayerModeIcon(
+                                icon = Iconsax.IconsaxRepeatMusic,
                                 contentDescription = stringResource(when (playerUiState.loopState) { LoopState.NONE -> Res.string.player_loop_mode_none; LoopState.ONE -> Res.string.player_loop_mode_one; LoopState.ALL -> Res.string.player_loop_mode_all }),
-                                tint = if (playerUiState.loopState == LoopState.NONE) {
-                                    AppTheme.colors.onSurfaceVariant
-                                } else {
-                                    AppTheme.colors.primary
-                                }
-                            )
+                                active = playerUiState.loopState != LoopState.NONE,
+                            repeatOne = playerUiState.loopState == LoopState.ONE)
                         }
                     }
                 }
@@ -401,11 +387,13 @@ fun AppLargePlayer(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         MillenniumIconButton(
+                            modifier = Modifier.playerPressFeedback(),
                             style = MillenniumIconButtonStyle.Quiet, onClick = onQueue
                         ) {
                             MillenniumIcon(Iconsax.IconsaxMusicFilter, contentDescription = stringResource(Res.string.queue_title))
                         }
                         MillenniumIconButton(
+                            modifier = Modifier.playerPressFeedback(),
                             style = MillenniumIconButtonStyle.Quiet,
                             onClick = {
                                 val track = (currentEntry as? QueueEntry.StreamingTrack)?.track
@@ -420,6 +408,7 @@ fun AppLargePlayer(
                             )
                         }
                         MillenniumIconButton(
+                            modifier = Modifier.playerPressFeedback(),
                             style = MillenniumIconButtonStyle.Quiet, onClick = onAlternativeSource
                         ) {
                             MillenniumIcon(
@@ -428,60 +417,20 @@ fun AppLargePlayer(
                             )
                         }
                         MillenniumIconButton(
+                            modifier = Modifier.playerPressFeedback(),
                             style = MillenniumIconButtonStyle.Quiet, onClick = onLyrics
                         ) {
                             MillenniumIcon(Iconsax.IconsaxMusic, contentDescription = stringResource(Res.string.player_lyrics))
                         }
-                        val goToAlbumLabel = stringResource(Res.string.player_go_to_album)
-                        val sleepTimerLabel = stringResource(Res.string.player_sleep_timer)
-                        val trackDetailsLabel = stringResource(Res.string.player_track_details)
-                        MillenniumDropdownMenu(
-                            expanded = playerOptionsUiState.isMoreOptionsMenuOpen,
-                            onExpandedChange = { expanded ->
-                                if (!expanded) playerOptionsViewModel.dismissMoreOptionsMenu()
-                            },
-                            side = AnchorSide.Top,
-                            anchor = {
-                                MillenniumIconButton(
-                                    style = MillenniumIconButtonStyle.Quiet,
-                                    onClick = {
-                                        playerOptionsViewModel.showMoreOptionsMenu()
-                                        onMoreOptions()
-                                    }
-                                ) {
-                                    MillenniumIcon(
-                                        Iconsax.Iconsax3DotsMore,
-                                        contentDescription = stringResource(Res.string.player_more_options_content_description)
-                                    )
-                                }
-                            }) {
-                            MillenniumDropdownMenuItem(
-                                label = goToAlbumLabel,
-                                icon = Iconsax.IconsaxCd,
-                                onClick = {
-                                    playerOptionsViewModel.dismissMoreOptionsMenu()
-                                    currentTrack?.album?.id?.let { albumId ->
-                                        navigationCommands.navigateTo(Routes.Album(albumId))
-                                    }
-                                })
-                            MillenniumDropdownMenuItem(
-                                label = sleepTimerLabel,
-                                icon = Iconsax.IconsaxMoon,
-                                onClick = {
-                                    playerOptionsViewModel.dismissMoreOptionsMenu()
-                                    playerOptionsViewModel.showSleepTimerDialog()
-                                })
-                            MillenniumDropdownMenuItem(
-                                label = trackDetailsLabel,
-                                icon = Iconsax.IconsaxInformation,
-                                onClick = {
-                                    playerOptionsViewModel.dismissMoreOptionsMenu()
-                                    playerOptionsViewModel.showTrackDetails()
-                                })
-                        }
+                        AppPlayerOptions(
+                            state = playerOptionsUiState,
+                            viewModel = playerOptionsViewModel,
+                            onAlternativeSource = onAlternativeSource,
+                            onOpen = onMoreOptions)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         MillenniumIconButton(
+                            modifier = Modifier.playerPressFeedback(),
                             style = MillenniumIconButtonStyle.Quiet,
                             onClick = {
                                 scope.launch {
@@ -518,6 +467,9 @@ fun AppLargePlayer(
                     }
                 }
             }
+            MillenniumSnackbarHost(
+                hostState = snackbarHostState,
+                modifier = Modifier.align(Alignment.BottomCenter))
         }
     }
 

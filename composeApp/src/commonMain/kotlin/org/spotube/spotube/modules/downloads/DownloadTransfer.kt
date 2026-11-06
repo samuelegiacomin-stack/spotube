@@ -35,7 +35,8 @@ internal fun parseDownloadRange(value: String?): DownloadRange? {
 internal class DownloadTransfer(private val http: HttpClient, private val fs: FileSystem) {
     private val logger = Logger.withTag("DownloadTransfer")
 
-    suspend fun download(url: String, output: Path, onRestart: () -> Unit, onChunk: (Long, Long) -> Unit) {
+    suspend fun download(url: String, output: Path, onRestart: () -> Unit, onChunk: (Long, Long) -> Unit, awaitPermit: suspend () -> Unit = {}) {
+        awaitPermit()
         val total = try {
             withTimeoutOrNull(4_000) {
                 http.prepareGet(url) { headers { append(HttpHeaders.Range, "bytes=0-0") } }.execute {
@@ -50,7 +51,7 @@ internal class DownloadTransfer(private val http: HttpClient, private val fs: Fi
 
         if (total != null && total >= 2 * 1024 * 1024) {
             try {
-                segmented(url, output, total, onChunk)
+                segmented(url, output, total, onChunk, awaitPermit)
                 return
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
@@ -58,17 +59,18 @@ internal class DownloadTransfer(private val http: HttpClient, private val fs: Fi
                 onRestart()
             }
         }
+        awaitPermit()
         http.prepareGet(url).execute { response ->
             check(response.status.isSuccess()) { getString(Res.string.downloads_error_http, response.status.value) }
             checkAudioType(response.headers[HttpHeaders.ContentType])
             val size = response.contentLength() ?: 0L
             fs.sink(output).buffer().use { sink ->
-                copyDownloadBody(response.bodyAsChannel(), sink, size) { onChunk(it, size) }
+                copyDownloadBody(response.bodyAsChannel(), sink, size, beforeRead = awaitPermit) { onChunk(it, size) }
             }
         }
     }
 
-    private suspend fun segmented(url: String, output: Path, total: Long, onChunk: (Long, Long) -> Unit) {
+    private suspend fun segmented(url: String, output: Path, total: Long, onChunk: (Long, Long) -> Unit, awaitPermit: suspend () -> Unit) {
         val count = 4
         val files = (0 until count).map { output.parent!! / "${output.name}.segment-$it" }
         try {
@@ -76,6 +78,7 @@ internal class DownloadTransfer(private val http: HttpClient, private val fs: Fi
                 files.mapIndexed { index, file -> async {
                     val start = total * index / count
                     val end = total * (index + 1) / count - 1
+                    awaitPermit()
                     http.prepareGet(url) {
                         headers { append(HttpHeaders.Range, "bytes=$start-$end") }
                     }.execute { response ->
@@ -85,7 +88,7 @@ internal class DownloadTransfer(private val http: HttpClient, private val fs: Fi
                         }
                         checkAudioType(response.headers[HttpHeaders.ContentType])
                         fs.sink(file).buffer().use { sink ->
-                            copyDownloadBody(response.bodyAsChannel(), sink, end - start + 1) { onChunk(it, total) }
+                            copyDownloadBody(response.bodyAsChannel(), sink, end - start + 1, beforeRead = awaitPermit) { onChunk(it, total) }
                         }
                     }
                 } }.awaitAll()

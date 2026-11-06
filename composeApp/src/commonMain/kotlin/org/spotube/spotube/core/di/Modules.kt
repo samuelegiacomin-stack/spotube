@@ -24,6 +24,7 @@ import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueueRepository
 import org.spotube.spotube.core.audioplayer.DeduplicatingQueueStateRepository
 import org.spotube.spotube.core.audioplayer.NextTrackPrefetcher
+import org.spotube.spotube.core.server.NextTrackAudioCache
 import org.spotube.spotube.core.audioplayer.DeviceAudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.QueueStateRepository
 import org.spotube.spotube.core.db.Database
@@ -57,6 +58,7 @@ import org.spotube.spotube.modules.devices.RemoteControlViewModel
 import org.spotube.spotube.modules.shell.ConnectStatusViewModel
 import org.spotube.spotube.modules.jam.JamViewModel
 import org.spotube.spotube.modules.downloads.DownloadManager
+import org.spotube.spotube.modules.downloads.CollectionDownloadService
 import org.spotube.spotube.modules.downloads.DownloadsViewModel
 import org.spotube.spotube.modules.home.HomeScreenRepository
 import org.spotube.spotube.modules.home.HomeScreenViewModel
@@ -180,7 +182,8 @@ val sharedModules = module {
     single { PluginUpdateService(get(), get()) } withOptions { createdAtStart() }
 
     // Downloads
-    singleOf(::DownloadManager)
+    singleOf(::DownloadManager) withOptions { createdAtStart() }
+    single { CollectionDownloadService(get()) }
     singleOf(::LyricsRepository)
     viewModelOf(::PlaylistPickerViewModel)
     viewModelOf(::DownloadsViewModel)
@@ -198,6 +201,7 @@ val sharedModules = module {
             blacklistRepository = get(),
             shareService = get(),
             downloadManager = get(),
+            collectionDownloads = get(),
             remotePlaybackController = get())
     }
     viewModel { (playlistId: String) -> AddTracksToPlaylistViewModel(playlistId, get(), get()) }
@@ -213,6 +217,7 @@ val sharedModules = module {
             libraryRepository = get(),
             shareService = get(),
             downloadManager = get(),
+            collectionDownloads = get(),
             remotePlaybackController = get())
     }
 
@@ -281,7 +286,7 @@ val sharedModules = module {
             matchedTracksRepository = get(),
             settingsRepository = get())
     }
-    singleOf(::CacheManager)
+    single { CacheManager(get(), get<SettingsRepository>(), { get<StreamingUrlRepository>().audioCacheContext() }) }
     singleOf(::AlternativeTracksRepository)
     singleOf(::LocalServer) withOptions {
         createdAtStart()
@@ -301,6 +306,7 @@ val sharedModules = module {
     }
     singleOf(::AudioPlayerQueueRepository)
     single<QueueStateRepository> { DeduplicatingQueueStateRepository(get<AudioPlayerQueueRepository>()) }
+    singleOf(::NextTrackAudioCache)
     singleOf(::NextTrackPrefetcher) withOptions { createdAtStart() }
     singleOf(::PlaybackProxyEndpoint)
     single<AudioPlayerQueue> {

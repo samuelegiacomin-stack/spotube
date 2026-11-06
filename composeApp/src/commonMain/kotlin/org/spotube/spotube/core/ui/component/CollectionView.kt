@@ -41,6 +41,7 @@ import com.composeunstyled.Text
 import org.spotube.plugin_interfaces.plugin_apis.metadata.album.MetadataAlbum
 import org.spotube.plugin_interfaces.plugin_apis.metadata.artist.MetadataArtist
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
+import org.spotube.spotube.modules.downloads.CollectionDownloadProgress
 import org.spotube.spotube.core.ui.misc.TextWithShimmer
 import org.spotube.spotube.core.ui.misc.shimmerApply
 import org.spotube.spotube.core.ui.theming.AppTheme
@@ -77,8 +78,8 @@ fun CollectionView(
     showFollowButton: Boolean = true,
     onEdit: (() -> Unit)? = null,
     onDownload: (() -> Unit)? = null,
-    isDownloadLoading: Boolean = false,
-    downloadError: String? = null,
+    downloadButtonLabel: String? = null,
+    downloadProgress: CollectionDownloadProgress = CollectionDownloadProgress(),
     sharedElementKey: String? = null,
     isLoading: Boolean = false,
     error: String? = null,
@@ -175,8 +176,8 @@ fun CollectionView(
                                 showFollowButton = showFollowButton,
                                 onEdit = onEdit,
                                 onDownload = onDownload,
-                                isDownloadLoading = isDownloadLoading,
-                                downloadError = downloadError,
+                                downloadButtonLabel = downloadButtonLabel,
+                                downloadProgress = downloadProgress,
                                 sharedElementKey = sharedElementKey,
                                 isJamGuest = isJamGuest,
                                 onAddToJam = { onAddToJam(tracks) })
@@ -203,8 +204,8 @@ fun CollectionView(
                             showFollowButton = showFollowButton,
                             onEdit = onEdit,
                             onDownload = onDownload,
-                            isDownloadLoading = isDownloadLoading,
-                            downloadError = downloadError,
+                            downloadButtonLabel = downloadButtonLabel,
+                            downloadProgress = downloadProgress,
                             sharedElementKey = sharedElementKey,
                             isJamGuest = isJamGuest,
                             onAddToJam = { onAddToJam(tracks) })

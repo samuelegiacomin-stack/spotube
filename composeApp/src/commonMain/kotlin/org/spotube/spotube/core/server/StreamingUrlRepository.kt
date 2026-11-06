@@ -71,7 +71,8 @@ data class StreamInfo(
     val url: String,
     val protocol: StreamProtocol,
     val codec: String,
-    val container: String)
+    val container: String,
+    val cacheContext: String? = null)
 
 class StreamingUrlRepository(
     private val pluginManager: AudioPluginSource,
@@ -85,6 +86,12 @@ class StreamingUrlRepository(
     private val streamUrlCache = mutableMapOf<String, CachedStreamUrl>()
     private val alternativesCacheMutex = Mutex()
     private val alternativesCache = mutableMapOf<String, CachedAlternatives>()
+
+    /** Cache audio only for the provider and playback preferences that produced it. */
+    internal fun audioCacheContext(): String {
+        val settings = settingsRepository.userSettings.value
+        return "${pluginManager.selectedAudioPlugin.value?.pluginId}|${settings.streamingMusicFormat}|${settings.streamingMusicQuality}"
+    }
 
     suspend fun resolveStreamInfo(
         trackId: String,
@@ -124,6 +131,7 @@ class StreamingUrlRepository(
             logger.w { "No audio plugin selected while resolving stream for track $trackId" }
             return null
         }
+        val resolvedContext = "${audioPlugin.pluginId}|$preferredFormat|$preferredQuality"
         logger.i {
             "[Resolve $trackId] '${track.title}' plugin=${audioPlugin.pluginId} forceRefresh=$forceRefresh " +
                 "prefs: format=${preferredFormat.codec}/${preferredFormat.container} quality=$preferredQuality " +
@@ -174,7 +182,7 @@ class StreamingUrlRepository(
                 logger.d { "Resolved stream for track $trackId using cached source" }
                 val resolvedStream = select(stream, "matched source ${source.id}")
                 if (resolvedStream != null) {
-                    val info = resolvedStream.toStreamInfo()
+                    val info = resolvedStream.toStreamInfo().copy(cacheContext = resolvedContext)
                     if (useUrlCache) {
                         cacheStreamInfo(trackId, info, preferredFormat, preferredQuality, stream, resolvedStream, audioPlugin.pluginId)
                     }
@@ -234,7 +242,7 @@ class StreamingUrlRepository(
         logger.d { "Resolved stream for track $trackId via track lookup" }
         val resolvedStream = select(stream, "track lookup -> ${stream.id}")
         if (resolvedStream != null) {
-            val info = resolvedStream.toStreamInfo()
+            val info = resolvedStream.toStreamInfo().copy(cacheContext = resolvedContext)
             if (useUrlCache) {
                 cacheStreamInfo(trackId, info, preferredFormat, preferredQuality, stream, resolvedStream, audioPlugin.pluginId)
             }
@@ -301,7 +309,8 @@ class StreamingUrlRepository(
                 logger.v { "Cached stream URL expired for track $trackId" }
                 return@withLock null
             }
-            StreamInfo(cached.url, cached.protocol, cached.codec, cached.container)
+            StreamInfo(cached.url, cached.protocol, cached.codec, cached.container,
+                "$pluginId|$preferredFormat|$preferredQuality")
         }
     }
 

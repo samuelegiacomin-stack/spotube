@@ -26,6 +26,8 @@ import androidx.compose.foundation.shape.CircleShape
 import org.spotube.spotube.core.ui.theming.AppTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
+import org.spotube.spotube.core.ui.component.playerPressFeedback
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.QueueEntry
@@ -59,6 +61,7 @@ fun PlayerHeartButton(
     }
 
     MillenniumIconButton(
+        modifier = Modifier.playerPressFeedback(isSavedTrackState is SavedState.Success),
         onClick = { currentTrackId?.let { savedTracksViewModel.toggleSavedTrack(it, isLiked) } },
         enabled = isSavedTrackState is SavedState.Success,
         loading = currentTrackId != null && currentTrackId in pendingSavedTrackIds,

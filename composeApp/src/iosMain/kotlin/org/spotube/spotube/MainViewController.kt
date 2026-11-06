@@ -24,10 +24,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.window.ComposeUIViewController
-import com.yushosei.newpipe.extractor.NewPipe
-import com.yushosei.newpipe.util.DefaultDownloaderImpl
-import org.spotube.spotube.core.di.initKoin
-import org.spotube.spotube.core.paths.Paths
 import org.spotube.spotube.core.webview.SafariUserAgent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -36,23 +32,6 @@ import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
 
 fun MainViewController() = ComposeUIViewController(configure = {
-    Paths().prepareUserFolders()
-    initKoin()
+    IosApplicationBootstrap.start()
     SafariUserAgent.prime()
-}) { InitNewPipe { App() } }
-
-@Composable
-fun InitNewPipe(
-    content: @Composable () -> Unit
-) {
-    var isInitialized by rememberSaveable { mutableStateOf(false) }
-
-    LaunchedEffect(Unit) {
-        NewPipe.init(DefaultDownloaderImpl.initDefault())
-        isInitialized = true
-    }
-
-    if (isInitialized) {
-        content()
-    }
-}
+}) { App() }

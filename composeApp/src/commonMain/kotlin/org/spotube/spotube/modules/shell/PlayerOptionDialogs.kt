@@ -103,10 +103,35 @@ import spotube.composeapp.generated.resources.player_track_details_thumbnail_url
 import spotube.composeapp.generated.resources.player_track_details_title
 import spotube.composeapp.generated.resources.player_track_details_track_number
 import spotube.composeapp.generated.resources.common_close
+import spotube.composeapp.generated.resources.playlist_write_failed
+import org.spotube.spotube.modules.library.playlist.AddToPlaylistPicker
 
 @Composable
 fun PlayerOptionDialogs(viewModel: PlayerOptionsViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    AddToPlaylistPicker(
+        visible = uiState.playlistTrack != null,
+        currentUserId = null,
+        onDismiss = viewModel::dismissPlaylistPicker,
+        onPlaylistSelected = viewModel::addCurrentTrackToPlaylist)
+
+    // The picker is a modal surface; an inline error here stays visible above it and
+    // the expanded player. The snackbar also remains available once it is dismissed.
+    uiState.playlistError?.let { message ->
+        MillenniumDialog(visible = true, onDismissRequest = viewModel::dismissPlaylistError) {
+            MillenniumDialogHeader {
+                MillenniumDialogTitle(stringResource(Res.string.playlist_write_failed))
+                MillenniumDialogClose()
+            }
+            MillenniumDialogBody { Text(message, color = AppTheme.colors.error) }
+            MillenniumDialogFooter {
+                MillenniumButton(onClick = viewModel::dismissPlaylistError) {
+                    Text(stringResource(Res.string.common_close))
+                }
+            }
+        }
+    }
 
     if (uiState.isSleepTimerDialogOpen) {
         SleepTimerDialog(

@@ -46,10 +46,7 @@ import io.ktor.utils.io.readAvailable
 import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import okio.FileSystem
 import okio.IOException
 import okio.Path.Companion.toPath
@@ -57,7 +54,6 @@ import okio.SYSTEM
 import okio.buffer
 import okio.use
 import org.koin.core.component.KoinComponent
-import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.TimeSource
 
 internal class StreamProxy(
@@ -75,8 +71,6 @@ internal class StreamProxy(
     }
 
     private val fileSystem = FileSystem.SYSTEM
-    private val streamingInProgress = mutableSetOf<String>()
-    private val streamingMutex = Mutex()
 
     private fun getTrackMetadata(trackId: String): MetadataTrack? {
         return audioPlayerQueue.findStreamingTrack(trackId)?.track
@@ -110,53 +104,23 @@ internal class StreamProxy(
                 return
             }
 
-            val isFirstRequest = streamingMutex.withLock {
-                if (trackId in streamingInProgress) {
-                    false
-                } else {
-                    streamingInProgress.add(trackId)
-                    true
-                }
-            }
-
-            if (!isFirstRequest) {
-                logger.d { "Track $trackId is being cached, waiting for cache" }
-                var waited = 0
-                while (waited < 30) {
-                    delay(200.milliseconds)
-                    waited++
-                    val entry = cacheManager.findCachedEntry(trackId)
-                    if (entry != null) {
-                        val (filePath, e) = entry
-                        logger.d { "Track $trackId became available from cache" }
-                        when (requestMethod) {
-                            HttpMethod.Head -> cacheManager.serveCacheHead(call, e)
-                            HttpMethod.Get -> cacheManager.serveCacheGet(call, filePath, e)
-                            else -> call.respond(HttpStatusCode.MethodNotAllowed)
-                        }
-                        return
-                    }
-                    // The caching request ended without committing (player disconnected or the
-                    // source was switched); nothing left to wait for.
-                    if (streamingMutex.withLock { trackId !in streamingInProgress }) break
-                }
-                logger.d { "No cache for track $trackId after waiting, falling through to upstream" }
-            }
-
-            try {
-                doStreamFromUpstream(call, trackId, requestMethod)
-            } finally {
-                if (isFirstRequest) {
-                    streamingMutex.withLock { streamingInProgress.remove(trackId) }
+            // HEAD/range probes and overlapping VLC requests go upstream immediately.
+            // Only one request may write a full cache file; the others never wait for it.
+            cacheManager.writers.withLease(trackId, requestMethod == HttpMethod.Get) { ownsLease ->
+                val ticket = if (ownsLease) cacheManager.writeTicket(trackId) else null
+                cacheManager.playbackNetwork.withRequest(trackId) {
+                    doStreamFromUpstream(call, trackId, requestMethod, ticket)
                 }
             }
             return
         }
 
-        doStreamFromUpstream(call, trackId, requestMethod)
+        cacheManager.playbackNetwork.withRequest(trackId) {
+            doStreamFromUpstream(call, trackId, requestMethod, null)
+        }
     }
 
-    private suspend fun doStreamFromUpstream(call: ApplicationCall, trackId: String, requestMethod: HttpMethod) {
+    private suspend fun doStreamFromUpstream(call: ApplicationCall, trackId: String, requestMethod: HttpMethod, cacheTicket: CacheWriteTicket?) {
         val resolveStart = TimeSource.Monotonic.markNow()
         val streamInfo = streamingUrlRepository.resolveStreamInfo(trackId)
         logger.i {
@@ -179,7 +143,8 @@ internal class StreamProxy(
             return
         }
 
-        proxyStream(call, streamInfo.url, trackId, requestMethod)
+        proxyStream(call, streamInfo.url, trackId, requestMethod,
+            cacheTicket?.takeIf { it.context == streamInfo.cacheContext })
     }
 
     suspend fun handleManifestRequest(call: ApplicationCall) {
@@ -203,7 +168,9 @@ internal class StreamProxy(
             return
         }
 
-        proxyManifest(call, streamInfo.url, trackId, streamInfo.protocol)
+        cacheManager.playbackNetwork.withRequest(trackId) {
+            proxyManifest(call, streamInfo.url, trackId, streamInfo.protocol)
+        }
     }
 
     suspend fun handleSegmentRequest(call: ApplicationCall) {
@@ -216,7 +183,7 @@ internal class StreamProxy(
             return
         }
 
-        proxySegment(call, segmentUrl, trackId)
+        cacheManager.playbackNetwork.withRequest(trackId) { proxySegment(call, segmentUrl, trackId) }
     }
 
     private suspend fun proxyManifest(
@@ -324,11 +291,13 @@ internal class StreamProxy(
         call: ApplicationCall,
         streamUrl: String,
         trackId: String,
-        requestMethod: HttpMethod
+        requestMethod: HttpMethod,
+        cacheTicket: CacheWriteTicket?
     ) {
         logger.d { "Proxying stream for track $trackId using $requestMethod" }
 
         var currentUrl = streamUrl
+        var currentCacheTicket = cacheTicket
         var attemptedRefresh = false
         val upstreamStart = TimeSource.Monotonic.markNow()
 
@@ -351,7 +320,7 @@ internal class StreamProxy(
                             "headers=${response.headers.entries().joinToString { "${it.key}=${it.value}" }}"
                     }
                     if (response.status.value < 400) {
-                        respondWithUpstream(call, response, trackId, requestMethod)
+                        respondWithUpstream(call, response, trackId, requestMethod, currentCacheTicket)
                         return@execute
                     }
 
@@ -366,7 +335,7 @@ internal class StreamProxy(
                             return@execute
                         }
                     }
-                    respondWithUpstream(call, response, trackId, requestMethod)
+                    respondWithUpstream(call, response, trackId, requestMethod, cacheTicket)
                 }
             }.exceptionOrNull()
 
@@ -385,6 +354,8 @@ internal class StreamProxy(
             val next = retryUrl ?: return
             logger.d { "Retrying stream for track $trackId using refreshed URL" }
             currentUrl = next
+            // A refreshed source may have changed provider/settings while this request ran.
+            currentCacheTicket = null
             attemptedRefresh = true
         }
     }
@@ -393,7 +364,8 @@ internal class StreamProxy(
         call: ApplicationCall,
         upstream: HttpResponse,
         trackId: String,
-        requestMethod: HttpMethod
+        requestMethod: HttpMethod,
+        cacheTicket: CacheWriteTicket?
     ) {
         if (upstream.status.value >= 400 && isCachingEnabled()) {
             val cachedEntry = cacheManager.findCachedEntry(trackId)
@@ -429,7 +401,7 @@ internal class StreamProxy(
         }
 
         // Only a full 200 response can be cached; 206 partial responses must not be stored as the whole track
-        val doCache = requestMethod == HttpMethod.Get && isCachingEnabled() &&
+        val doCache = cacheTicket != null && requestMethod == HttpMethod.Get && isCachingEnabled() &&
                 upstream.status == HttpStatusCode.OK
         val cacheTrack = if (doCache) getTrackMetadata(trackId) else null
         val cacheFilename = if (cacheTrack != null) {
@@ -462,8 +434,9 @@ internal class StreamProxy(
 
             private suspend fun writeBody(channel: io.ktor.utils.io.ByteWriteChannel) {
                 if (cacheFilename != null) {
-                    val cacheDir = cacheManager.resolveCacheDir()
-                    val cacheFile = cacheDir / cacheFilename.toPath()
+                    val ticket = requireNotNull(cacheTicket)
+                    val cacheDir = ticket.directory
+                    val cacheFile = cacheDir / "$cacheFilename.streaming".toPath()
                     fileSystem.createDirectories(cacheDir)
                     var completed = false
                     var totalBytes = 0L
@@ -481,14 +454,15 @@ internal class StreamProxy(
                                 totalBytes += read
                             }
                         }
-                        completed = expectedLength == null || expectedLength == totalBytes
-                        if (completed) {
-                            cacheManager.commitCacheEntry(
+                        if (totalBytes > 0 && (expectedLength == null || expectedLength == totalBytes)) {
+                            completed = cacheManager.publishCacheFile(
                                 trackId = trackIdForCache,
+                                ticket = ticket,
+                                temporaryFile = cacheFile,
                                 filename = cacheFilename,
                                 sizeBytes = totalBytes,
                                 contentType = cacheContentType)
-                            scope.launch {
+                            if (completed) scope.launch {
                                 cacheManager.evictIfNeeded()
                             }
                         }
