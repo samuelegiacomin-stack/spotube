@@ -94,10 +94,16 @@ fun AppShell(
     content: @Composable () -> Unit
 ) {
     val navigatorCommands: NavigationCommands = koinInject()
+    val libraryRepository: org.spotube.spotube.modules.library.LibraryRepository = koinInject()
     val remotePlaybackController: RemotePlaybackController = koinInject()
     val snackbarHostState = remember { MillenniumSnackbarHostState() }
     LaunchedEffect(remotePlaybackController) {
         remotePlaybackController.events.collect { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+    LaunchedEffect(libraryRepository) {
+        libraryRepository.playlistMessagesFlow.collect { message ->
             snackbarHostState.showSnackbar(message)
         }
     }
@@ -304,7 +310,7 @@ internal fun CompactPlayerOverlay(
     onQueue: () -> Unit,
     onAlternativeSource: () -> Unit,
     onExpandLyrics: () -> Unit,
-    floatingPlayer: @Composable (Modifier) -> Unit = { AppFloatingPlayer(modifier = it) },
+    floatingPlayer: @Composable (Modifier, () -> Unit) -> Unit = { modifier, expand -> AppFloatingPlayer(modifier = modifier, onExpand = expand) },
     expandedPlayer: @Composable (modifier: Modifier, onCollapse: () -> Unit) -> Unit = { modifier, onCollapse ->
         AppExpandedPlayer(
             modifier = modifier,
@@ -402,7 +408,8 @@ internal fun CompactPlayerOverlay(
                                 .zeroSizeUnless(floatingPlayerVisible)
                                 .graphicsLayer {
                                     alpha = viewModel.floatingPlayerAlpha(progress)
-                                })
+                                },
+                            { scope.launch { sheetState.animateTo(SheetDetent.FullyExpanded) } })
                     }
                 }
             }

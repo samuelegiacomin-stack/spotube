@@ -20,6 +20,6 @@ internal class DownloadPlaybackPriority {
 
 internal fun downloadConcurrency(state: PlayerState): Int = when (state) {
     PlayerState.BUFFERING -> 0
-    PlayerState.PLAYING -> 1
+    PlayerState.PLAYING -> 2
     else -> DownloadManager.MAX_CONCURRENT_DOWNLOADS
 }

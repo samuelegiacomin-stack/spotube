@@ -55,7 +55,7 @@ final class BackgroundDownloadEngine: NSObject, NativeDownloadEngine, URLSession
                         continue
                     }
                     // Kotlin reattaches and applies current playback priority before resuming.
-                    if self.suspended[id] ?? true { task.suspend() }
+                    self.applySuspension(task, paused: self.suspended[id] ?? true)
                 }
             }
         }
@@ -119,8 +119,8 @@ final class BackgroundDownloadEngine: NSObject, NativeDownloadEngine, URLSession
                             }
                             if let task = tasks.first(where: { $0.taskIdentifier == record.taskIdentifier &&
                                 $0.taskDescription == id && $0.state != .canceling && $0.state != .completed }) {
-                                task.priority = URLSessionTask.lowPriority
-                                if self.suspended[id] ?? true { task.suspend() } else { task.resume() }
+                                task.priority = URLSessionTask.defaultPriority
+                                self.applySuspension(task, paused: self.suspended[id] ?? true)
                                 return
                             }
                         }
@@ -130,11 +130,11 @@ final class BackgroundDownloadEngine: NSObject, NativeDownloadEngine, URLSession
                         let relativeDestination = try self.relativePath(destination)
                         let task = self.session.downloadTask(with: source)
                         task.taskDescription = id
-                        task.priority = URLSessionTask.lowPriority
+                        task.priority = URLSessionTask.defaultPriority
                         self.records[id] = Record(destination: relativeDestination,
                                                   taskIdentifier: task.taskIdentifier, outcome: nil)
                         do { try self.persist() } catch { task.cancel(); throw error }
-                        if !(self.suspended[id] ?? true) { task.resume() }
+                        self.applySuspension(task, paused: self.suspended[id] ?? true)
                     } catch { listener.onFailure(message: error.localizedDescription) }
                 }
             }
@@ -158,6 +158,13 @@ final class BackgroundDownloadEngine: NSObject, NativeDownloadEngine, URLSession
         }
     }
 
+    // URLSession suspension is balanced. Repeated policy updates must not stack suspend()
+    // calls on the same task or a later resume can leave it apparently stuck.
+    private func applySuspension(_ task: URLSessionTask, paused: Bool) {
+        if paused && task.state == .running { task.suspend() }
+        else if !paused && task.state == .suspended { task.resume() }
+    }
+
     func setSuspended(id: String, suspended: Bool) {
         DispatchQueue.main.async {
             self.suspended[id] = suspended
@@ -165,7 +172,7 @@ final class BackgroundDownloadEngine: NSObject, NativeDownloadEngine, URLSession
             self.session.getAllTasks { tasks in
                 DispatchQueue.main.async {
                     for task in tasks where task.taskIdentifier == taskID && task.taskDescription == id {
-                        if self.suspended[id] ?? true { task.suspend() } else { task.resume() }
+                        self.applySuspension(task, paused: self.suspended[id] ?? true)
                     }
                 }
             }

@@ -28,6 +28,7 @@ import org.spotube.millennium.theme.MillenniumTheme
 import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -85,6 +86,7 @@ internal val FloatingPlayerBottomBleed = 16.dp
 @Composable
 fun AppFloatingPlayer(
     modifier: Modifier = Modifier,
+    onExpand: () -> Unit = {},
     sharedTransitionScope: SharedTransitionScope? = null,
     animatedVisibilityScope: AnimatedVisibilityScope? = null,
     audioPlayer: AudioPlayerInterface = koinInject(),
@@ -114,6 +116,7 @@ fun AppFloatingPlayer(
         modifier = modifier,
         albumArtModifier = albumArtModifier,
         onPlayPause = ::onPlayPause,
+        onExpand = onExpand,
         heartButton = {
             PlayerHeartButton(
                 audioPlayerQueue = audioPlayerQueue,
@@ -129,7 +132,8 @@ internal fun FloatingPlayerContent(
     modifier: Modifier = Modifier,
     albumArtModifier: Modifier = Modifier,
     onPlayPause: () -> Unit,
-    heartButton: @Composable () -> Unit
+    heartButton: @Composable () -> Unit,
+    onExpand: () -> Unit = {}
 ) {
     val coverModel = playerUiState.coverModel
 
@@ -165,7 +169,7 @@ internal fun FloatingPlayerContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).clickable(enabled = playerUiState.queue.isNotEmpty(), onClick = onExpand),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Box(

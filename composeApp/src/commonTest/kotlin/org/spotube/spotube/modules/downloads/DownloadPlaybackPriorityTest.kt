@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadPlaybackPriorityTest {
-    @Test fun bufferingStopsAllThreeAndPlayingResumesOnlyTheFirst() = runTest {
+    @Test fun bufferingStopsAllThreeAndPlayingResumesTwo() = runTest {
         val priority = DownloadPlaybackPriority()
         val ids = listOf("first", "second", "third")
         val passed = mutableSetOf<String>()
@@ -23,7 +23,7 @@ class DownloadPlaybackPriorityTest {
         assertTrue(passed.isEmpty())
         priority.update(ids, PlayerState.PLAYING)
         runCurrent()
-        assertEquals(setOf("first"), passed)
+        assertEquals(setOf("first", "second"), passed)
         priority.update(ids, PlayerState.PAUSED)
         runCurrent()
         assertEquals(ids.toSet(), passed)

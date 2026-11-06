@@ -81,6 +81,8 @@ import spotube.composeapp.generated.resources.library_add_to_playlist_search_pla
 import spotube.composeapp.generated.resources.library_add_to_playlist_title
 import spotube.composeapp.generated.resources.library_local_tracks_count
 import spotube.composeapp.generated.resources.common_cancel
+import spotube.composeapp.generated.resources.playlist_write_pending
+import spotube.composeapp.generated.resources.playlist_count_unknown
 
 @Composable
 fun AddToPlaylistPicker(
@@ -103,7 +105,8 @@ fun AddToPlaylistPicker(
 
     val content: @Composable () -> Unit = {
         Column(modifier = Modifier.fillMaxSize()) {
-            state.error?.let { Text(it, color = AppTheme.colors.onSurface) }
+            state.error?.let { Text(it, color = AppTheme.colors.error) }
+            if (state.pendingPlaylistId != null) Text(stringResource(Res.string.playlist_write_pending))
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -123,6 +126,8 @@ fun AddToPlaylistPicker(
             PlaylistPickerContent(
                 playlists = state.playlists,
                 isLoading = state.loading,
+                counts = state.counts,
+                enabled = state.pendingPlaylistId == null,
                 onPlaylistSelected = { playlistId ->
                     onPlaylistSelected(playlistId)
                 })
@@ -156,6 +161,8 @@ fun AddToPlaylistPicker(
 private fun PlaylistPickerContent(
     playlists: List<MetadataPlaylist>,
     isLoading: Boolean,
+    counts: Map<String, Int>,
+    enabled: Boolean,
     onPlaylistSelected: (String) -> Unit) {
     if (isLoading) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -172,6 +179,8 @@ private fun PlaylistPickerContent(
             itemsWithUniqueKeys(playlists, id = { it.id }) { playlist ->
                 PlaylistPickerRow(
                     playlist = playlist,
+                    count = counts[playlist.id],
+                    enabled = enabled,
                     onClick = { onPlaylistSelected(playlist.id) })
             }
         }
@@ -181,12 +190,14 @@ private fun PlaylistPickerContent(
 @Composable
 private fun PlaylistPickerRow(
     playlist: MetadataPlaylist,
+    count: Int?,
+    enabled: Boolean,
     onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -218,7 +229,8 @@ private fun PlaylistPickerRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis)
             Text(
-                text = pluralStringResource(Res.plurals.library_local_tracks_count, playlist.trackCount, playlist.trackCount),
+                text = if (count != null) pluralStringResource(Res.plurals.library_local_tracks_count, count, count)
+                    else stringResource(Res.string.playlist_count_unknown),
                 style = AppTheme.typography.bodySmall,
                 color = AppTheme.colors.onSurfaceVariant)
         }

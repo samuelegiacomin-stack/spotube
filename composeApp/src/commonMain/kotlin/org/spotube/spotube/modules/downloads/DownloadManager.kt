@@ -152,6 +152,9 @@ class DownloadManager(
         .map { it?.takeIf(String::isNotBlank) ?: paths.getUserDownloadsDirPath() }
         .stateIn(scope, SharingStarted.Eagerly, paths.getUserDownloadsDirPath())
 
+    private val pausedIds = MutableStateFlow<Set<String>>(emptySet())
+    val pausedDownloadIds: StateFlow<Set<String>> = pausedIds
+
     private val activeJobs = mutableMapOf<String, Job>()
     private val handoffs = mutableMapOf<String, CompletableDeferred<Unit>>()
 
@@ -302,6 +305,7 @@ class DownloadManager(
 
     private fun updatePriority() {
         val allowed = priority.update(activeJobs.keys.toList(), audioPlayer.playerStateFlow.value)
+        pausedIds.value = activeJobs.keys.filterNot { it in allowed }.toSet()
         activeJobs.keys.forEach { nativeEngine?.setSuspended(it, it !in allowed) }
     }
 
@@ -375,18 +379,9 @@ class DownloadManager(
             }
             val output = requireNotNull(finalPath)
             val downloadUrl = requireNotNull(url)
-            // An atomic publish from the previous process may precede the journal commit.
-            if (nativeEngine != null) {
-                awaitNativeDownload(item.id, downloadUrl, output.toString())
-            } else {
-                queueMutex.withLock { handoffs[item.id]?.complete(Unit) }
-                if (store.verifiedPath(output.toString()) == null) {
-                    executeTransfer(downloadUrl, item, output)
-                }
-            }
-            check(store.verifiedPath(output.toString()) != null) { "Downloaded audio file is missing or empty" }
-            // Optional enrichment cannot delay handing the audio to the OS background downloader.
-            // On relaunch these operations can safely be repeated on the atomically published file.
+            // Enrichment overlaps the transfer instead of adding up to 8 seconds at its tail.
+            // It remains structured: cancellation/failure cancels both children and audio is
+            // published as completed only after bounded metadata work, never while tagging.
             coroutineScope {
                 val artwork = async {
                     if (audioPlayer.playerStateFlow.value != PlayerState.BUFFERING) withTimeoutOrNull(4_000) { fetchCover(item) } else null
@@ -394,6 +389,15 @@ class DownloadManager(
                 val lyrics = async {
                     if (audioPlayer.playerStateFlow.value != PlayerState.BUFFERING) withTimeoutOrNull(8_000) { lyricsRepository.get(track) } else null
                 }
+                if (nativeEngine != null) {
+                    awaitNativeDownload(item.id, downloadUrl, output.toString())
+                } else {
+                    queueMutex.withLock { handoffs[item.id]?.complete(Unit) }
+                    if (store.verifiedPath(output.toString()) == null) {
+                        executeTransfer(downloadUrl, item, output)
+                    }
+                }
+                check(store.verifiedPath(output.toString()) != null) { "Downloaded audio file is missing or empty" }
                 applyMetadata(item, output.name, requireNotNull(output.parent), artwork.await())
                 lyricsRepository.bindDownload(track, output.name, lyrics.await())
             }

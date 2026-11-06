@@ -86,6 +86,10 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
             }
 
             let media = VLCMedia(url: mediaUrl)
+            // The URL is our loopback proxy; avoid VLC's long default network prebuffer.
+            if mediaUrl.host == "127.0.0.1" || mediaUrl.host == "localhost" {
+                media.addOption(":network-caching=500")
+            }
             if startPositionMs > 0 {
                 media.addOption(":start-time=\(Double(startPositionMs) / 1000.0)")
             }

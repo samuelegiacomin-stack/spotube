@@ -46,7 +46,7 @@ class CompactPlayerOverlayDragTest {
                     navigationState = navigation,
                     viewModel = remember { AppShellViewModel() },
                     onQueue = {}, onAlternativeSource = {}, onExpandLyrics = {},
-                    floatingPlayer = { modifier ->
+                    floatingPlayer = { modifier, _ ->
                         DisposableEffect(Unit) {
                             floatingCompositions++
                             onDispose {}

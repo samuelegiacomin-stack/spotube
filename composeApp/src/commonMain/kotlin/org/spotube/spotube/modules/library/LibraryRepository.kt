@@ -31,6 +31,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import spotube.composeapp.generated.resources.playlist_write_confirmed
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -38,6 +41,11 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.sync.Mutex
+import spotube.composeapp.generated.resources.playlist_write_pending
+import spotube.composeapp.generated.resources.playlist_write_timeout
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.update
 import org.spotube.spotube.core.i18n.getString
@@ -54,8 +62,13 @@ class LibraryRepository(
     val plugin
         get() = pluginManager.selectedMetadataPlugin.value
 
+    private val playlistMessages = MutableSharedFlow<String>(extraBufferCapacity = 4)
+    val playlistMessagesFlow = playlistMessages.asSharedFlow()
     private val playlistRevision = MutableStateFlow(0L)
     val playlistRevisionFlow = playlistRevision.asStateFlow()
+    private val playlistWriteMutex = Mutex()
+    private val pendingPlaylistWrite = MutableStateFlow<String?>(null)
+    val pendingPlaylistWriteFlow = pendingPlaylistWrite.asStateFlow()
     private val playlistWriteError = MutableStateFlow<String?>(null)
     val playlistWriteErrorFlow = playlistWriteError.asStateFlow()
     fun clearPlaylistWriteError() { playlistWriteError.value = null }
@@ -91,7 +104,7 @@ class LibraryRepository(
 
     private var isLoggedIn: Boolean = false
 
-    private val authPlugin get() = if (isLoggedIn) plugin else null
+    private val authPlugin get() = plugin?.takeIf { it.loggedInFlow.value }
 
     fun invalidateCaches() {
         playlistCache.invalidateAll()
@@ -173,28 +186,27 @@ class LibraryRepository(
         }
     }
 
-    suspend fun savePlaylists(ids: List<String>) {
-        authPlugin?.let { plugin ->
-            pluginManager.withScope {
-                plugin.use {
-                    metadataPlaylistAPI.savePlaylists(ids)
-                }
-            }
-            playlistCache.invalidateAll()
-            savedPlaylistIds.value += ids.toSet()
-        }
-    }
+    suspend fun savePlaylists(ids: List<String>) = setPlaylistsSaved(ids, true)
 
-    suspend fun removeSavedPlaylists(ids: List<String>) {
-        authPlugin?.let { plugin ->
-            pluginManager.withScope {
-                plugin.use {
-                    metadataPlaylistAPI.removeSavedPlaylists(ids)
+    suspend fun removeSavedPlaylists(ids: List<String>) = setPlaylistsSaved(ids, false)
+
+    private suspend fun setPlaylistsSaved(ids: List<String>, saved: Boolean) {
+        if (ids.isEmpty()) return
+        val selected = authPlugin ?: error(getString(Res.string.playlist_login_required))
+        pluginManager.withScope {
+            selected.use {
+                if (saved) metadataPlaylistAPI.savePlaylists(ids)
+                else metadataPlaylistAPI.removeSavedPlaylists(ids)
+                val actual = metadataPlaylistAPI.isSavedPlaylists(ids)
+                check(actual.size == ids.size && actual.all { it == saved }) {
+                    getString(Res.string.playlist_write_failed)
                 }
             }
-            playlistCache.invalidateAll()
-            savedPlaylistIds.value -= ids.toSet()
         }
+        playlistCache.invalidateAll()
+        savedPlaylistIds.update { if (saved) it + ids.toSet() else it - ids.toSet() }
+        playlistRevision.update { it + 1 }
+        playlistMessages.tryEmit(getString(Res.string.playlist_write_confirmed))
     }
 
     suspend fun isSavedAlbums(ids: List<String>): List<Boolean> {
@@ -359,36 +371,50 @@ class LibraryRepository(
     }
 
     suspend fun addTracksToPlaylist(playlistId: String, trackIds: List<String>) {
-        if (trackIds.isEmpty()) return
+        check(playlistWriteMutex.tryLock()) { getString(Res.string.playlist_write_pending) }
+        pendingPlaylistWrite.value = playlistId
         playlistWriteError.value = null
         try {
-            // The plugin's live login state is authoritative; the observer may still be
-            // catching up immediately after signing in.
-            val plugin = plugin?.takeIf { it.loggedInFlow.value }
-                ?: error(getString(Res.string.playlist_login_required))
-            pluginManager.withScope {
-                plugin.use {
-                    val confirmed = writeAndConfirmPlaylistAddition(
-                        trackIds = trackIds,
-                        write = { metadataPlaylistAPI.addTracksToPlaylist(playlistId, trackIds) },
-                        fetchCount = { metadataPlaylistAPI.getPlaylist(playlistId).trackCount },
-                        fetchTrackIds = { offset, limit ->
-                            metadataPlaylistAPI.getPlaylistTracks(
-                                playlistId, PaginationStrategy.Offset(offset, limit))
-                                .items.map { it.id }
-                        })
-                    check(confirmed) { getString(Res.string.playlist_add_unconfirmed) }
+            check(trackIds.isNotEmpty()) { getString(Res.string.playlist_add_unconfirmed) }
+            val plugin = authPlugin ?: error(getString(Res.string.playlist_login_required))
+            withTimeout(30_000) {
+                pluginManager.withScope {
+                    plugin.use {
+                        val confirmed = writeAndConfirmPlaylistAddition(
+                            trackIds = trackIds,
+                            write = { metadataPlaylistAPI.addTracksToPlaylist(playlistId, trackIds) },
+                            fetchCount = { metadataPlaylistAPI.getPlaylist(playlistId).trackCount },
+                            fetchTrackIds = { offset, limit ->
+                                metadataPlaylistAPI.getPlaylistTracks(
+                                    playlistId, PaginationStrategy.Offset(offset, limit))
+                                    .items.map { it.id }
+                            })
+                        check(confirmed) { getString(Res.string.playlist_add_unconfirmed) }
+                    }
                 }
             }
             playlistCache.invalidateAll()
             playlistRevision.update { it + 1 }
+            playlistMessages.tryEmit(getString(Res.string.playlist_write_confirmed))
+        } catch (timeout: TimeoutCancellationException) {
+            // The server may have accepted the write. Never retry a mutation automatically.
+            val failure = IllegalStateException(getString(Res.string.playlist_write_timeout))
+            playlistWriteError.value = failure.message
+            throw failure
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
             playlistWriteError.value = getString(Res.string.playlist_write_failed) +
                 (e.message?.let { ": $it" } ?: "")
             throw e
+        } finally {
+            pendingPlaylistWrite.value = null
+            playlistWriteMutex.unlock()
         }
+    }
+
+    suspend fun playlistDetails(id: String): MetadataPlaylist? = authPlugin?.let { selected ->
+        pluginManager.withScope { selected.use { metadataPlaylistAPI.getPlaylist(id) } }
     }
 
     suspend fun editablePlaylists(currentUserId: String?): List<MetadataPlaylist> {

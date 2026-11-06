@@ -953,4 +953,9 @@
     <string name="downloads_progress_percent">%1$d%</string>
     <string name="player_playback_failed">Riproduzione non riuscita: %1$s</string>
     <string name="downloads_error_not_audio">Il server non ha inviato un file audio.</string>
+    <string name="playlist_write_pending">Aggiunta a Spotify e verifica in corso…</string>
+    <string name="playlist_count_unknown">Conteggio brani non disponibile</string>
+    <string name="playlist_write_timeout">Spotify non ha confermato in tempo. Controlla la playlist su Spotify prima di riprovare.</string>
+    <string name="downloads_status_playback_wait">In attesa per dare priorità alla riproduzione</string>
+    <string name="playlist_write_confirmed">Spotify aggiornato e verificato</string>
 </resources>

@@ -213,7 +213,7 @@ internal fun DownloadListRow(
             )
             Text(
                 when (item.status) {
-                    DownloadStatus.Downloading -> stringResource(
+                    DownloadStatus.Downloading -> if (item.pausedForPlayback) stringResource(Res.string.downloads_status_playback_wait) else stringResource(
                         Res.string.downloads_status_downloading,
                         item.percent
                     )

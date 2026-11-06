@@ -64,17 +64,18 @@ class CollectionPlaybackHelper(
     }
 
     suspend fun playAlbumFromTrack(albumId: String, track: MetadataTrack) {
+        // Tapping an item already in this collection must not refetch every page first.
+        if (audioPlayerQueue.isAlbumPlaying(albumId)) {
+            val queueIndex = audioPlayerQueue.getQueue().indexOfFirst { entry ->
+                (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
+            }
+            if (queueIndex >= 0) {
+                audioPlayerQueue.jumpTo(queueIndex)
+                return
+            }
+        }
         val entries = fetchAllAlbumTracks(albumId)
         if (entries.isEmpty()) return
-
-        val queue = audioPlayerQueue.getQueue()
-        val queueIndex = queue.indexOfFirst { entry ->
-            (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
-        }
-        if (queueIndex >= 0) {
-            audioPlayerQueue.jumpTo(queueIndex)
-            return
-        }
 
         val startPosition = entries.indexOfFirst { entry ->
             (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
@@ -116,17 +117,18 @@ class CollectionPlaybackHelper(
     }
 
     suspend fun playPlaylistFromTrack(playlistId: String, track: MetadataTrack) {
+        // Tapping an item already in this collection must not refetch every page first.
+        if (audioPlayerQueue.isPlaylistPlaying(playlistId)) {
+            val queueIndex = audioPlayerQueue.getQueue().indexOfFirst { entry ->
+                (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
+            }
+            if (queueIndex >= 0) {
+                audioPlayerQueue.jumpTo(queueIndex)
+                return
+            }
+        }
         val entries = fetchAllPlaylistTracks(playlistId)
         if (entries.isEmpty()) return
-
-        val queue = audioPlayerQueue.getQueue()
-        val queueIndex = queue.indexOfFirst { entry ->
-            (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
-        }
-        if (queueIndex >= 0) {
-            audioPlayerQueue.jumpTo(queueIndex)
-            return
-        }
 
         val startPosition = entries.indexOfFirst { entry ->
             (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
@@ -210,14 +212,7 @@ class CollectionPlaybackHelper(
     }
 
     private suspend fun fetchAllAlbumTracks(albumId: String): List<QueueEntry> {
-        val allTracks = mutableListOf<MetadataTrack>()
-        var pagination = albumRepository.getAlbumTracks(albumId)
-        pagination?.items?.let { allTracks.addAll(it) }
-
-        while (pagination?.nextPagination != null) {
-            pagination = albumRepository.getAlbumTracks(albumId, pagination.nextPagination)
-            pagination?.items?.let { allTracks.addAll(it) }
-        }
+        val allTracks = loadCollectionPages { albumRepository.getAlbumTracks(albumId, it) }
 
         val blacklistedTrackIds = blacklistRepository.getTracksSnapshot().map { it.id }.toSet()
         val blacklistedArtistIds = blacklistRepository.getArtistsSnapshot().map { it.id }.toSet()
@@ -231,14 +226,7 @@ class CollectionPlaybackHelper(
     }
 
     private suspend fun fetchAllPlaylistTracks(playlistId: String): List<QueueEntry> {
-        val allTracks = mutableListOf<MetadataTrack>()
-        var pagination = playlistRepository.getPlaylistTracks(playlistId)
-        pagination?.items?.let { allTracks.addAll(it) }
-
-        while (pagination?.nextPagination != null) {
-            pagination = playlistRepository.getPlaylistTracks(playlistId, pagination.nextPagination)
-            pagination?.items?.let { allTracks.addAll(it) }
-        }
+        val allTracks = loadCollectionPages { playlistRepository.getPlaylistTracks(playlistId, it) }
 
         val blacklistedTracks = blacklistRepository.getTracksSnapshot()
         val blacklistedArtists = blacklistRepository.getArtistsSnapshot()
@@ -270,14 +258,7 @@ class CollectionPlaybackHelper(
         mapNotNull { (it as? QueueEntry.StreamingTrack)?.track }
 
     private suspend fun fetchAllSavedTracks(): List<QueueEntry> {
-        val allTracks = mutableListOf<MetadataTrack>()
-        var pagination = savedTracksRepository.getSavedTracks()
-        pagination?.items?.let { allTracks.addAll(it) }
-
-        while (pagination?.nextPagination != null) {
-            pagination = savedTracksRepository.getSavedTracks(pagination.nextPagination)
-            pagination?.items?.let { allTracks.addAll(it) }
-        }
+        val allTracks = loadCollectionPages { savedTracksRepository.getSavedTracks(it) }
 
         val blacklistedTrackIds = blacklistRepository.getTracksSnapshot().map { it.id }.toSet()
         val blacklistedArtistIds = blacklistRepository.getArtistsSnapshot().map { it.id }.toSet()

@@ -36,7 +36,8 @@ data class DownloadRowUiState(
     val progress: Float,
     val percent: Int,
     val error: String?,
-    val action: DownloadRowAction
+    val action: DownloadRowAction,
+    val pausedForPlayback: Boolean = false
 )
 
 data class DownloadsUiState(
@@ -48,7 +49,7 @@ data class DownloadsUiState(
     val folder: String = ""
 )
 
-internal fun downloadsUiState(items: List<DownloadItem>, folder: String = ""): DownloadsUiState {
+internal fun downloadsUiState(items: List<DownloadItem>, folder: String = "", pausedIds: Set<String> = emptySet()): DownloadsUiState {
     val completedCount = items.count { it.status == DownloadStatus.Completed }
     return DownloadsUiState(
         items = items.map { item ->
@@ -63,7 +64,8 @@ internal fun downloadsUiState(items: List<DownloadItem>, folder: String = ""): D
                     DownloadStatus.Completed -> DownloadRowAction.Remove
                     is DownloadStatus.Failed, DownloadStatus.Cancelled -> DownloadRowAction.Retry
                     else -> DownloadRowAction.Cancel
-                }
+                },
+                pausedForPlayback = item.id in pausedIds
             )
         },
         activeCount = items.count { it.status == DownloadStatus.Downloading || it.status == DownloadStatus.Queued },
@@ -82,7 +84,7 @@ class DownloadsViewModel(
         emptyList()
     )
 
-    val uiState = combine(downloadManager.downloadsFlow, downloadManager.downloadFolder, ::downloadsUiState)
+    val uiState = combine(downloadManager.downloadsFlow, downloadManager.downloadFolder, downloadManager.pausedDownloadIds, ::downloadsUiState)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DownloadsUiState())
 
     fun downloadTrack(track: MetadataTrack) {

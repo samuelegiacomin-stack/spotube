@@ -122,7 +122,7 @@ class JamLayoutTest {
                                     navigationState = navigation,
                                     viewModel = remember { AppShellViewModel() },
                                     onQueue = {}, onAlternativeSource = {}, onExpandLyrics = {},
-                                    floatingPlayer = { modifier ->
+                                    floatingPlayer = { modifier, _ ->
                                         FloatingPlayerContent(
                                             PlayerUiState(),
                                             modifier = modifier.onGloballyPositioned {

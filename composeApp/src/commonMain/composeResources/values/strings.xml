@@ -1133,4 +1133,9 @@
     <string name="downloads_progress_percent">%1$d%</string>
     <string name="player_playback_failed">Playback failed: %1$s</string>
     <string name="downloads_error_not_audio">The server did not send an audio file.</string>
+    <string name="playlist_write_pending">Adding to Spotify and verifying…</string>
+    <string name="playlist_count_unknown">Track count unavailable</string>
+    <string name="playlist_write_timeout">Spotify did not confirm in time. Check the playlist on Spotify before trying again.</string>
+    <string name="downloads_status_playback_wait">Waiting to give priority to playback</string>
+    <string name="playlist_write_confirmed">Spotify updated and verified</string>
 </resources>
