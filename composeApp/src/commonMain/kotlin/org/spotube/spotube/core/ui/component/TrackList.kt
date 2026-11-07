@@ -161,6 +161,7 @@ private fun Modifier.trackCardBounds(listState: LazyListState, edgeInsetPx: Int)
 enum class TrackSortOption(val label: StringResource) {
     None(Res.string.track_list_sort_original),
     ReverseOriginal(Res.string.track_list_sort_reverse_original),
+    RecentlyAdded(Res.string.track_list_sort_recently_added),
     Title(Res.string.track_list_sort_title),
     Artist(Res.string.track_list_sort_artist),
     Album(Res.string.track_list_sort_album),
@@ -180,6 +181,7 @@ fun TrackList(
     footerContent: (@Composable () -> Unit)? = null,
     onLoadNextPage: () -> Unit = {},
     initialSort: TrackSortOption = TrackSortOption.None,
+    tracksByAddedAt: List<MetadataTrack>? = null,
     onTrackClick: (MetadataTrack) -> Unit = {},
     onTrackOptionsAction: (MetadataTrack, TrackOptionsAction) -> Unit = { _, _ -> },
     onArtistClick: (MetadataArtist.Basic) -> Unit = {},
@@ -202,17 +204,21 @@ fun TrackList(
     state: LazyListState? = null) {
     val filterState = rememberTextFieldState()
     val filterQuery = filterState.text.toString()
-    var sortBy by rememberSaveable { mutableStateOf(initialSort) }
+    var chosenSort by rememberSaveable { mutableStateOf(initialSort) }
+    val sortBy = if (chosenSort == TrackSortOption.RecentlyAdded && tracksByAddedAt == null) {
+        TrackSortOption.None
+    } else chosenSort
     var selectedTrackForOptions by remember { mutableStateOf<MetadataTrack?>(null) }
     var isSelectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedTrackIds by rememberSaveable { mutableStateOf<Set<String>>(emptySet()) }
 
     val normalizedQuery = remember(filterQuery) { filterQuery.trim().lowercase() }
-    val visibleTracks = remember(tracks, normalizedQuery, sortBy) {
+    val visibleTracks = remember(tracks, tracksByAddedAt, normalizedQuery, sortBy) {
+        val inputTracks = if (sortBy == TrackSortOption.RecentlyAdded) tracksByAddedAt.orEmpty() else tracks
         val filtered = if (normalizedQuery.isBlank()) {
-            tracks
+            inputTracks
         } else {
-            tracks.filter { track ->
+            inputTracks.filter { track ->
                 val searchableText = buildString {
                     append(track.title).append(' ')
                     append(track.album?.title.orEmpty()).append(' ')
@@ -224,6 +230,7 @@ fun TrackList(
 
         when (sortBy) {
             TrackSortOption.None -> filtered
+            TrackSortOption.RecentlyAdded -> filtered
             TrackSortOption.ReverseOriginal -> filtered.asReversed()
             TrackSortOption.Title -> filtered.sortedBy { it.title.lowercase() }
             TrackSortOption.Artist -> filtered.sortedBy {
@@ -429,10 +436,12 @@ fun TrackList(
                 Box(
                     contentAlignment = Alignment.Center) {
                     AdaptiveDropdownBottomSheet(
-                        items = TrackSortOption.entries.map { option ->
+                        items = TrackSortOption.entries
+                            .filter { it != TrackSortOption.RecentlyAdded || tracksByAddedAt != null }
+                            .map { option ->
                             AdaptiveMenuItem(
                                 label = stringResource(option.label),
-                                onClick = { sortBy = option },
+                                onClick = { chosenSort = option },
                                 selected = sortBy == option)
                         },
                         trigger = { onClick ->

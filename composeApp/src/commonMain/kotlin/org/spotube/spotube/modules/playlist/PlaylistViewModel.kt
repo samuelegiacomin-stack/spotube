@@ -72,29 +72,21 @@ sealed interface PlaylistScreenState {
         val playlist: MetadataPlaylist?
         val isSaved: Boolean
         val tracks: List<MetadataTrack>
+        val tracksByAddedAt: List<MetadataTrack>?
         val nextPagination: PaginationStrategy?
         val isSaving: Boolean
 
         data class Loaded(
             override val playlist: MetadataPlaylist? = null,
             override val isSaved: Boolean = false,
-            override val tracks: List<MetadataTrack> = emptyList(),
+            val trackEntries: List<PlaylistTrackEntry> = emptyList(),
             override val nextPagination: PaginationStrategy? = null,
             override val isSaving: Boolean = false) : Data {
-            fun toLoadingMore(): LoadingMore = LoadingMore(
-                playlist = playlist,
-                isSaved = isSaved,
-                tracks = tracks,
-                nextPagination = nextPagination,
-                isSaving = isSaving)
+            override val tracks = trackEntries.map { it.track }
+            override val tracksByAddedAt = trackEntries.recentlyAddedTracks()
         }
 
-        data class LoadingMore(
-            override val playlist: MetadataPlaylist? = null,
-            override val isSaved: Boolean = false,
-            override val tracks: List<MetadataTrack> = emptyList(),
-            override val nextPagination: PaginationStrategy? = null,
-            override val isSaving: Boolean = false) : Data
+        data class LoadingMore(val data: Loaded) : Data by data
     }
 
     data class Error(val message: String) : PlaylistScreenState
@@ -199,16 +191,16 @@ class PlaylistViewModel(
         _state.value = PlaylistScreenState.Loading
         try {
             val playlistInfo = repository.getPlaylistInfo(playlistId)
-            val tracksResult = repository.getPlaylistTracks(playlistId)
+            val tracksResult = repository.getPlaylistTracks(playlistId)?.withPlaylistDates()
             if (generation != dataGeneration) return
             _state.value = PlaylistScreenState.Data.Loaded(
                 playlist = playlistInfo?.first,
                 isSaved = playlistInfo?.second ?: false,
-                tracks = tracksResult?.items.orEmpty(),
+                trackEntries = tracksResult?.items.orEmpty(),
                 nextPagination = tracksResult?.nextPagination)
             // Complete in the background so search and reverse order include the tail.
             loadCompleteTracks()
-            tracksResult?.items?.let { savedTracksRepository.isSavedTracks(it.map { item -> item.id }) }
+            tracksResult?.items?.let { savedTracksRepository.isSavedTracks(it.map { item -> item.track.id }) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -223,15 +215,14 @@ class PlaylistViewModel(
         val current = _state.value as? PlaylistScreenState.Data.Loaded ?: return
         val pagination = current.nextPagination ?: return
         val generation = dataGeneration
-        val loading = current.toLoadingMore()
-        _state.value = loading
+        _state.value = PlaylistScreenState.Data.LoadingMore(current)
         try {
-            val result = checkNotNull(repository.getPlaylistTracks(playlistId, pagination))
+            val result = checkNotNull(repository.getPlaylistTracks(playlistId, pagination)).withPlaylistDates()
             if (generation != dataGeneration) return
             val latest = _state.value as? PlaylistScreenState.Data ?: return
-            _state.value = current.copy(tracks = current.tracks + result.items, nextPagination = result.nextPagination,
+            _state.value = current.copy(trackEntries = current.trackEntries + result.items, nextPagination = result.nextPagination,
                 isSaving = latest.isSaving)
-            savedTracksRepository.isSavedTracks(result.items.map { it.id })
+            savedTracksRepository.isSavedTracks(result.items.map { it.track.id })
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (error: Exception) {
@@ -244,14 +235,13 @@ class PlaylistViewModel(
         val current = _state.value as? PlaylistScreenState.Data.Loaded ?: return
         if (current.nextPagination == null || completeTracksJob?.isActive == true) return
         val generation = dataGeneration
-        val loading = current.toLoadingMore()
-        _state.value = loading
+        _state.value = PlaylistScreenState.Data.LoadingMore(current)
         completeTracksJob = viewModelScope.launch {
             try {
-                val tracks = loadCollectionPages { repository.getPlaylistTracks(playlistId, it) }
+                val entries = loadCollectionPages { repository.getPlaylistTracks(playlistId, it)?.withPlaylistDates() }
                 if (generation == dataGeneration) {
                     val latest = _state.value as? PlaylistScreenState.Data ?: return@launch
-                    _state.value = current.copy(tracks = tracks, nextPagination = null, isSaving = latest.isSaving)
+                    _state.value = current.copy(trackEntries = entries, nextPagination = null, isSaving = latest.isSaving)
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -290,7 +280,7 @@ class PlaylistViewModel(
         _state.update { state ->
             when (state) {
                 is PlaylistScreenState.Data.Loaded -> state.copy(isSaving = isSaving)
-                is PlaylistScreenState.Data.LoadingMore -> state.copy(isSaving = isSaving)
+                is PlaylistScreenState.Data.LoadingMore -> state.copy(data = state.data.copy(isSaving = isSaving))
                 else -> state
             }
         }

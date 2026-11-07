@@ -43,8 +43,9 @@ class PlaylistRepository(
     val plugin
         get() = pluginManager.selectedMetadataPlugin.value
 
-    private val playlistInfoCache = Cache.Builder<String, Pair<MetadataPlaylist, Boolean>>().build()
-    private val playlistTracksCache = Cache.Builder<Pair<String, PaginationStrategy>, PaginationResult<MetadataTrack>>().build()
+    private val playlistInfoCache = Cache.Builder<Pair<String, Long>, Pair<MetadataPlaylist, Boolean>>().build()
+    private val playlistTracksCache =
+        Cache.Builder<Triple<String, Long, PaginationStrategy>, PaginationResult<MetadataTrack>>().build()
 
     init {
         scope.launch {
@@ -70,7 +71,7 @@ class PlaylistRepository(
     }
 
     suspend fun getPlaylistInfo(playlistId: String) = plugin?.let { plugin ->
-        playlistInfoCache.get(playlistId) {
+        playlistInfoCache.get(playlistId to libraryRepository.playlistRevisionFlow.value) {
             pluginManager.withScope {
                 plugin.use {
                     val playlist = metadataPlaylistAPI.getPlaylist(playlistId)
@@ -83,7 +84,10 @@ class PlaylistRepository(
 
     suspend fun getPlaylistTracks(playlistId: String, paginationStrategy: PaginationStrategy? = null) =
         plugin?.let { plugin ->
-            playlistTracksCache.get(playlistId to (paginationStrategy ?: PaginationStrategy.Offset(0, 20))) {
+            // A page requested before a confirmed Spotify write cannot fill the new revision's cache.
+            val revision = libraryRepository.playlistRevisionFlow.value
+            val key = Triple(playlistId, revision, paginationStrategy ?: PaginationStrategy.Offset(0, 20))
+            playlistTracksCache.get(key) {
                 pluginManager.withScope {
                     plugin.use {
                         metadataPlaylistAPI.getPlaylistTracks(

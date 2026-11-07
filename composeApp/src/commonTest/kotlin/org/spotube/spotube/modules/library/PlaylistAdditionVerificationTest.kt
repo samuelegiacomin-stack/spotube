@@ -25,14 +25,14 @@ class PlaylistAdditionVerificationTest {
         val confirmed = writeAndConfirmPlaylistAddition(listOf("new"), { added = true }, { if (added) 5001 else 5000 },
             { offset, limit -> pages += offset to limit; listOf("new") })
         assertTrue(confirmed)
-        assertEquals(listOf(4951 to 50), pages)
+        assertEquals(listOf(5000 to 1), pages)
     }
 
     @Test fun eventuallyVisibleAddRetriesOnlyReads() = runTest {
         var writes = 0
         var reads = 0
         assertTrue(writeAndConfirmPlaylistAddition(listOf("new"), { writes++ },
-            { if (writes == 0) 1 else 2 }, { _, _ -> reads++; if (reads < 3) listOf("old") else listOf("old", "new") }))
+            { if (writes == 0) 1 else 2 }, { _, _ -> reads++; if (reads < 3) emptyList() else listOf("new") }))
         assertEquals(1, writes)
         assertEquals(3, reads)
     }
@@ -77,5 +77,15 @@ class PlaylistAdditionVerificationTest {
         assertFalse(writeAndConfirmPlaylistAddition(listOf("existing"), { writes++ }, { 10 },
             { _, _ -> listOf("existing") }))
         assertEquals(1, writes)
+    }
+
+    @Test fun unrelatedAppendCannotConfirmAnOldOccurrence() = runTest {
+        var wrote = false
+        assertFalse(writeAndConfirmPlaylistAddition(listOf("existing"), { wrote = true },
+            { if (wrote) 11 else 10 }, { offset, limit ->
+                assertEquals(10, offset)
+                assertEquals(1, limit)
+                listOf("different-track")
+            }))
     }
 }

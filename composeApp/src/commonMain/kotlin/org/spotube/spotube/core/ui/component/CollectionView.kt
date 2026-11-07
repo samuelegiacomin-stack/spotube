@@ -92,6 +92,7 @@ fun CollectionView(
     onTrackClick: (MetadataTrack) -> Unit = {},
     onLoadNextPage: () -> Unit = {},
     initialSort: TrackSortOption = TrackSortOption.None,
+    tracksByAddedAt: List<MetadataTrack>? = null,
     onTrackOptionsAction: (MetadataTrack, TrackOptionsAction) -> Unit = { _, _ -> },
     onArtistClick: (MetadataArtist.Basic) -> Unit = {},
     onAlbumClick: (MetadataAlbum.Detailed) -> Unit = {},
@@ -152,6 +153,7 @@ fun CollectionView(
         } else {
             TrackList(
                 initialSort = initialSort,
+                tracksByAddedAt = tracksByAddedAt,
                 modifier = Modifier.fillMaxSize(),
                 state = listState,
                 headerContent = {

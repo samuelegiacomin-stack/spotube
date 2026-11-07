@@ -82,6 +82,22 @@ class TrackListVirtualizationTest {
     }
 
     @Test
+    fun recentlyAddedUsesTheProvidedDateOrderRatherThanReversingThePlaylist() {
+        val newest = track(2001)
+        val original = (0 until 2000).map(::track).toMutableList().apply { add(1000, newest) }
+        val dateOrder = listOf(newest) + original.filterNot { it.id == newest.id }
+        ImageComposeScene(1000, 800) {
+            SpotubeTheme(UserSettings(theme = Theme.DARK)) {
+                TrackList(tracks = original, initialSort = TrackSortOption.RecentlyAdded, tracksByAddedAt = dateOrder)
+            }
+        }.use { scene ->
+            repeat(3) { scene.render().close() }
+            assertTrue("Song 2001" in songTitles(scene))
+            assertTrue("Song 1999" !in songTitles(scene))
+        }
+    }
+
+    @Test
     fun onlyVisibleRowsAreComposedAndTheEndLoadsMore() {
         val tracks = (0 until 2000).map(::track)
         val listState = LazyListState()

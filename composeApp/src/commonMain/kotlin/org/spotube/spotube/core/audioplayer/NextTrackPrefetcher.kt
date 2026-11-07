@@ -20,6 +20,11 @@ class NextTrackPrefetcher(player: AudioPlayerInterface, queue: AudioPlayerQueue,
         val canWarm = combine(player.positionFlow, player.playerStateFlow, player.loopStateFlow) { position, state, loop ->
             state == PlayerState.PLAYING && loop != LoopState.ONE && position.inWholeMilliseconds >= 3_000
         }.distinctUntilChanged()
+        // Resolving a URL is lighter than fetching audio. Start when playback begins
+        // so an early manual skip can benefit too.
+        val canResolve = combine(player.playerStateFlow, player.loopStateFlow) { state, loop ->
+            state == PlayerState.PLAYING && loop != LoopState.ONE
+        }.distinctUntilChanged()
         val hasHeadroom = combine(player.bufferingPositionFlow, player.positionFlow) { buffered, position ->
             (buffered - position).inWholeMilliseconds >= 10_000
         }.distinctUntilChanged()
@@ -36,7 +41,7 @@ class NextTrackPrefetcher(player: AudioPlayerInterface, queue: AudioPlayerQueue,
             }
         }
         scope.launch {
-            combine(canWarm, queue.currentQueueEntryFlow, queue.queueFlow) { ready, current, entries ->
+            combine(canResolve, queue.currentQueueEntryFlow, queue.queueFlow) { ready, current, entries ->
                 nextTrackForPrefetch(ready, current, entries)
             }.distinctUntilChangedBy { it?.id }.collectLatest { track ->
                 if (track != null) refreshNextTrackUrl { forceRefresh ->

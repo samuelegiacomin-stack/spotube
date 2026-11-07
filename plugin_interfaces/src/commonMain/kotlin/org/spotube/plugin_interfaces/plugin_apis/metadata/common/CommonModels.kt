@@ -44,6 +44,8 @@ data class PaginationResult<T>(
     val items: List<T>,
     val totalCount: Int,
     val nextPagination: PaginationStrategy?,
+    /** Optional ISO-8601 dates, aligned with items. A playlist can contain a track more than once. */
+    val itemAddedAt: List<String?>? = null,
 )
 
 @Serializable

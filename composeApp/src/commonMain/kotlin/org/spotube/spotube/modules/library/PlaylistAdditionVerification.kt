@@ -18,19 +18,22 @@ internal suspend fun writeAndConfirmPlaylistAddition(
     if (trackIds.isEmpty()) return true
     val countBefore = fetchCount().coerceAtLeast(0)
     write()
-    val expected = trackIds.toSet()
+    val expected = trackIds.groupingBy { it }.eachCount()
     repeat(3) { attempt ->
         if (attempt > 0) delay(300L)
         val count = fetchCount().coerceAtLeast(0)
         // An old occurrence alone cannot prove that this mutation added anything.
         if (count < countBefore + trackIds.size) return@repeat
-        val missing = expected.toMutableSet()
-        // Adds use BOTTOM_OF_PLAYLIST; inspect enough of the tail for the whole batch.
-        var offset = (count - maxOf(50, trackIds.size)).coerceAtLeast(0)
+        val missing = expected.toMutableMap()
+        // Spotify appends at the bottom. Read only the new positions so a
+        // preexisting copy cannot confirm an unrelated change in the count.
+        var offset = countBefore
         while (offset < count && missing.isNotEmpty()) {
             val limit = minOf(100, count - offset)
-            val ids = fetchTrackIds(offset, limit)
-            missing.removeAll(ids.toSet())
+            for (id in fetchTrackIds(offset, limit)) {
+                val remaining = missing[id] ?: continue
+                if (remaining == 1) missing.remove(id) else missing[id] = remaining - 1
+            }
             offset += limit
         }
         if (missing.isEmpty()) return true
