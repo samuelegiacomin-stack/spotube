@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+import org.spotube.spotube.modules.settings.AppearanceStyle
 import org.spotube.spotube.modules.settings.Theme
 import org.spotube.spotube.modules.settings.UserSettings
 import org.spotube.millennium.composables.MillenniumModalBottomSheetTheme
@@ -42,6 +43,7 @@ import org.spotube.millennium.composables.MillenniumTopAppBarThemeProperties
 import org.spotube.millennium.composables.defaultMillenniumModalBottomSheetTheme
 import org.spotube.millennium.composables.defaultMillenniumTopAppBarTheme
 import org.spotube.millennium.theme.MillenniumColors
+import org.spotube.millennium.theme.MillenniumColorSchemes
 import org.spotube.millennium.theme.MillenniumDarkThemeComponents
 import org.spotube.millennium.theme.MillenniumLightThemeComponents
 import org.spotube.millennium.theme.MillenniumPalette
@@ -168,7 +170,8 @@ val AppDefaultTypography = AppTypography(
 data class AppShapes(
     val small: Shape,
     val medium: Shape,
-    val large: Shape
+    val large: Shape,
+    val panelTop: Shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
 )
 
 val AppDefaultShapes = AppShapes(
@@ -181,12 +184,14 @@ val LocalAppColors =
     staticCompositionLocalOf { appColorsFrom(org.spotube.millennium.theme.MillenniumLightColors) }
 val LocalAppTypography = staticCompositionLocalOf { AppDefaultTypography }
 val LocalAppShapes = staticCompositionLocalOf { AppDefaultShapes }
+private val LocalAppearanceStyle = staticCompositionLocalOf { AppearanceStyle.CLASSIC }
 
 /** Reads the active app theme tokens, all backed by Millennium. */
 object AppTheme {
     val colors: AppColors @Composable get() = LocalAppColors.current
     val typography: AppTypography @Composable get() = LocalAppTypography.current
     val shapes: AppShapes @Composable get() = LocalAppShapes.current
+    val appearance: AppearanceStyle @Composable get() = LocalAppearanceStyle.current
 }
 
 /**
@@ -206,7 +211,36 @@ fun SpotubeTheme(
         Theme.DARK -> true
         Theme.SYSTEM -> isSystemDarkTheme()
     }
-    val palette: MillenniumPalette = settings.palette
+    val appearance = settings.appearanceStyle
+    val usesClassicPalette = appearance == AppearanceStyle.CLASSIC && settings.appearanceAccent == null
+    val schemes = remember(appearance, settings.appearanceAccent, settings.palette) {
+        if (usesClassicPalette) MillenniumColorSchemes() else MillenniumColorSchemes(
+            light = appearanceColors(settings, dark = false),
+            dark = appearanceColors(settings, dark = true),
+        )
+    }
+    val shapes = remember(appearance) {
+        val radius = when (appearance) {
+            AppearanceStyle.CLASSIC -> 16.dp
+            AppearanceStyle.GLASS -> 22.dp
+            AppearanceStyle.MINIMAL -> 10.dp
+            AppearanceStyle.PIXEL -> 2.dp
+            AppearanceStyle.MONO -> 6.dp
+        }
+        if (appearance == AppearanceStyle.CLASSIC) AppDefaultShapes else AppShapes(
+            small = RoundedCornerShape(radius / 2),
+            medium = RoundedCornerShape(radius * 0.75f),
+            large = RoundedCornerShape(radius),
+            panelTop = RoundedCornerShape(topStart = radius, topEnd = radius),
+        )
+    }
+    val typography = remember(appearance) {
+        if (appearance == AppearanceStyle.PIXEL) AppDefaultTypography.copy(
+            titleMedium = AppDefaultTypography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+            labelMedium = AppDefaultTypography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+            labelSmall = AppDefaultTypography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+        ) else AppDefaultTypography
+    }
 
     val darkTheme = MillenniumDarkThemeComponents
     val lightTheme = MillenniumLightThemeComponents
@@ -214,7 +248,8 @@ fun SpotubeTheme(
     MillenniumTheme(
         dark = isDarkTheme,
         config = MillenniumThemeConfig(
-            palette = palette,
+            palette = if (usesClassicPalette) settings.palette else MillenniumPalette.Blue,
+            colorSchemes = schemes,
             dark = darkTheme.copy(
                 topAppBarTheme = MillenniumTopAppBarTheme(
                     properties = darkTheme.topAppBarTheme.properties.copy(
@@ -237,8 +272,9 @@ fun SpotubeTheme(
         MillenniumTooltipHost {
             CompositionLocalProvider(
                 LocalAppColors provides colors,
-                LocalAppTypography provides AppDefaultTypography,
-                LocalAppShapes provides AppDefaultShapes,
+                LocalAppTypography provides typography,
+                LocalAppShapes provides shapes,
+                LocalAppearanceStyle provides appearance,
                 content = content
             )
         }

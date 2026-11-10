@@ -49,12 +49,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.modules.saved_tracks.SavedTracksViewModel
+import org.spotube.spotube.modules.settings.AppearanceStyle
 import org.spotube.spotube.modules.saved_tracks.SAVED_TRACKS_COLLECTION_ID
 import org.spotube.spotube.resources.iconsax.Iconsax
 import org.spotube.spotube.resources.iconsax.IconsaxPause
@@ -136,14 +138,19 @@ internal fun FloatingPlayerContent(
     onExpand: () -> Unit = {}
 ) {
     val coverModel = playerUiState.coverModel
+    val appearance = AppTheme.appearance
+    val panel = when (appearance) {
+        AppearanceStyle.CLASSIC, AppearanceStyle.GLASS -> millenniumPanelBrush(MillenniumTheme.colors)
+        else -> SolidColor(MillenniumTheme.colors.surface)
+    }
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(FloatingPlayerContentHeight + FloatingPlayerBottomBleed)
             .millenniumSurface(
-                background = millenniumPanelBrush(MillenniumTheme.colors),
-                shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
+                background = panel,
+                shape = AppTheme.shapes.panelTop,
                 borderColor = MillenniumTheme.colors.border,
                 borderWidth = 1.dp,
             )
@@ -176,7 +183,7 @@ internal fun FloatingPlayerContent(
                         modifier = Modifier
                             .size(42.dp)
                             .then(albumArtModifier)
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(if (appearance == AppearanceStyle.CLASSIC) RoundedCornerShape(6.dp) else AppTheme.shapes.small)
                             .background(AppTheme.colors.onSurface.copy(alpha = 0.12f)),
                         contentAlignment = Alignment.Center
                     ) {

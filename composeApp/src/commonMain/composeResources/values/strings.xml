@@ -167,6 +167,17 @@
     <string name="settings_appearance_title">Look &amp; feel</string>
     <string name="settings_appearance_subtitle_current">Surface material and accent. Current: %1$s · %2$s</string>
     <string name="settings_appearance_dialog_title">Look &amp; feel</string>
+    <string name="settings_appearance_selection">%1$s · %2$s</string>
+    <string name="settings_visual_style">Style</string>
+    <string name="settings_style_classic">Classic</string>
+    <string name="settings_style_glass">Glass</string>
+    <string name="settings_style_minimal">Minimal</string>
+    <string name="settings_style_pixel">Pixel</string>
+    <string name="settings_style_mono">Monochrome</string>
+    <string name="settings_accent_automatic">Style default</string>
+    <string name="settings_accent_teal">Teal</string>
+    <string name="settings_accent_plum">Plum</string>
+    <string name="settings_preview_player_title">Player preview</string>
     <string name="settings_appearance_dialog_description">Pick a surface material, then an accent that pairs with it. Every option is a curated combination.</string>
     <string name="settings_appearance_surface_label">Surface</string>
     <string name="settings_appearance_accent_label">Accent</string>

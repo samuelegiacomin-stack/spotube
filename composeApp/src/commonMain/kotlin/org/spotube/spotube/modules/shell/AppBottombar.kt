@@ -23,7 +23,10 @@ import org.spotube.millennium.composables.MillenniumBottomNavigationBar
 import org.spotube.millennium.composables.MillenniumBottomNavigationItem
 import org.spotube.millennium.composables.MillenniumIcon
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
 import org.spotube.spotube.NavigationItem
 import org.jetbrains.compose.resources.stringResource
 import org.spotube.spotube.bottombarTabs
@@ -31,6 +34,8 @@ import org.spotube.spotube.core.navigation.NavigationState
 import org.spotube.spotube.core.navigation.Navigator
 import org.spotube.spotube.core.navigation.Routes
 import org.spotube.spotube.modules.downloads.DownloadBadgeIndicator
+import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.modules.settings.AppearanceStyle
 
 @Composable
 fun AppBottombar(
@@ -39,7 +44,10 @@ fun AppBottombar(
     modifier: Modifier = Modifier,
     libraryBadge: @Composable () -> Unit = { DownloadBadgeIndicator() }
 ) {
-    MillenniumBottomNavigationBar(modifier = modifier) {
+    val dockModifier = if (AppTheme.appearance == AppearanceStyle.GLASS) {
+        modifier.padding(horizontal = 10.dp).clip(AppTheme.shapes.large)
+    } else modifier
+    MillenniumBottomNavigationBar(modifier = dockModifier) {
         bottombarTabs.filterIsInstance<NavigationItem.Tab<*>>()
             .forEach { tab ->
                 val selected = navigationState.topLevelRoute == tab.route

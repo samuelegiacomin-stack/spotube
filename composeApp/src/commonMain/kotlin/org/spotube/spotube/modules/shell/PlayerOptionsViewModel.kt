@@ -70,7 +70,6 @@ import org.spotube.spotube.core.navigation.NavigationCommands
 import org.spotube.spotube.core.navigation.Routes
 import org.spotube.spotube.core.i18n.getString
 import spotube.composeapp.generated.resources.player_track_action_failed
-import spotube.composeapp.generated.resources.player_playlist_added
 import spotube.composeapp.generated.resources.playlist_write_failed
 import spotube.composeapp.generated.resources.player_radio_unavailable
 import spotube.composeapp.generated.resources.player_radio_started
@@ -294,14 +293,12 @@ class PlayerOptionsViewModel(
             try {
                 libraryRepository.addTracksToPlaylist(playlistId, listOf(track.id))
                 _uiState.update { it.copy(playlistTrack = null) }
-                messages.send(getString(Res.string.player_playlist_added, track.title))
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (error: Exception) {
                 val message = libraryRepository.playlistWriteErrorFlow.value
                     ?: (getString(Res.string.playlist_write_failed) + ": " + error.message.orEmpty())
                 _uiState.update { it.copy(playlistError = message) }
-                messages.send(message)
             } finally {
                 _uiState.update { it.copy(isAddingToPlaylist = false) }
             }

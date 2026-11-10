@@ -166,6 +166,17 @@
     <string name="settings_appearance_title">Aspetto e stile</string>
     <string name="settings_appearance_subtitle_current">Materiale della superficie e accento. Attuale: %1$s · %2$s</string>
     <string name="settings_appearance_dialog_title">Aspetto e stile</string>
+    <string name="settings_appearance_selection">%1$s · %2$s</string>
+    <string name="settings_visual_style">Stile</string>
+    <string name="settings_style_classic">Classico</string>
+    <string name="settings_style_glass">Vetro</string>
+    <string name="settings_style_minimal">Minimal</string>
+    <string name="settings_style_pixel">Pixel</string>
+    <string name="settings_style_mono">Monocromo</string>
+    <string name="settings_accent_automatic">Colore dello stile</string>
+    <string name="settings_accent_teal">Petrolio</string>
+    <string name="settings_accent_plum">Prugna</string>
+    <string name="settings_preview_player_title">Anteprima del player</string>
     <string name="settings_appearance_dialog_description">Scegli un materiale per la superficie, poi un accento abbinato. Ogni opzione è una combinazione curata.</string>
     <string name="settings_appearance_surface_label">Superficie</string>
     <string name="settings_appearance_accent_label">Accento</string>

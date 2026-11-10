@@ -17,38 +17,56 @@
 
 package org.spotube.spotube.modules.settings.sections
 
-import org.spotube.millennium.composables.MillenniumDialogHeader
-import org.spotube.millennium.composables.MillenniumDialogTitle
-import org.spotube.millennium.composables.MillenniumDialogClose
-import org.spotube.millennium.composables.MillenniumDialogBody
-import org.spotube.millennium.composables.MillenniumDialogFooter
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import org.jetbrains.compose.resources.stringResource
+import org.spotube.millennium.composables.MillenniumButton
+import org.spotube.millennium.composables.MillenniumButtonStyle
+import org.spotube.millennium.composables.MillenniumDialog
+import org.spotube.millennium.composables.MillenniumDialogBody
+import org.spotube.millennium.composables.MillenniumDialogClose
+import org.spotube.millennium.composables.MillenniumDialogFooter
+import org.spotube.millennium.composables.MillenniumDialogHeader
+import org.spotube.millennium.composables.MillenniumDialogTitle
+import org.spotube.millennium.composables.MillenniumIcon
+import org.spotube.millennium.composables.MillenniumText
 import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.core.ui.theming.appearanceColors
+import org.spotube.spotube.core.ui.theming.color
 import org.spotube.spotube.core.ui.theming.isLightAppearance
+import org.spotube.spotube.modules.settings.AppearanceAccent
+import org.spotube.spotube.modules.settings.AppearanceStyle
 import org.spotube.spotube.modules.settings.SettingsViewModel
 import org.spotube.spotube.modules.settings.Theme
 import org.spotube.spotube.modules.settings.UserSettings
@@ -57,142 +75,109 @@ import org.spotube.spotube.modules.settings.components.SettingCardItem
 import org.spotube.spotube.resources.iconsax.Iconsax
 import org.spotube.spotube.resources.iconsax.IconsaxColorSwatch
 import org.spotube.spotube.resources.iconsax.IconsaxMagic
-import org.jetbrains.compose.resources.stringResource
-import org.spotube.millennium.composables.MillenniumButton
-import org.spotube.millennium.composables.MillenniumButtonStyle
-import org.spotube.millennium.composables.MillenniumDialog
-import org.spotube.millennium.composables.MillenniumSeparator
-import org.spotube.millennium.composables.MillenniumText
-import org.spotube.millennium.theme.MillenniumColorSchemes
-import org.spotube.millennium.theme.MillenniumPalette
-import org.spotube.millennium.theme.MillenniumTheme
-import org.spotube.millennium.theme.MillenniumThemeConfig
-import org.spotube.millennium.theme.resolve
+import org.spotube.spotube.resources.iconsax.IconsaxMusic
+import org.spotube.spotube.resources.iconsax.IconsaxPlay
 import spotube.composeapp.generated.resources.*
 
 internal fun LazyListScope.appearanceSection(
     settings: UserSettings,
     settingsViewModel: SettingsViewModel,
-    includeHeader: Boolean = true) {
-    if (includeHeader) {
-        settingsSectionHeader(Res.string.settings_section_appearance)
-    }
+    includeHeader: Boolean = true,
+) {
+    if (includeHeader) settingsSectionHeader(Res.string.settings_section_appearance)
     settingsSectionCard(
         items = listOf(
             {
                 SelectionSettingCard(
                     title = stringResource(Res.string.settings_theme_title),
-                    subtitle = stringResource(
-                        Res.string.settings_theme_subtitle_current,
-                        settings.theme.displayLabel()
-                    ),
+                    subtitle = stringResource(Res.string.settings_theme_subtitle_current, settings.theme.displayLabel()),
                     icon = {
                         SettingsItemIcon(Iconsax.IconsaxColorSwatch, stringResource(Res.string.settings_theme_title))
                     },
                     selectedOption = settings.theme,
                     options = Theme.entries,
                     optionLabel = { it.displayLabel() },
-                    onOptionSelected = { theme ->
-                        settingsViewModel.updateSettings {
-                            copy(theme = theme)
-                        }
-                    }
+                    onOptionSelected = { theme -> settingsViewModel.updateSettings { copy(theme = theme) } },
                 )
             },
             {
-                AppearanceSettingCard(
-                    selectedPalette = settings.palette,
-                    icon = {
-                        SettingsItemIcon(
-                            Iconsax.IconsaxMagic,
-                            stringResource(Res.string.settings_appearance_title)
-                        )
-                    },
-                    onSaved = { palette ->
-                        settingsViewModel.updateSettings {
-                            copy(palette = palette)
-                        }
-                    })
-            })
+                AppearanceSettingCard(settings) { style, accent ->
+                    settingsViewModel.updateSettings { copy(appearanceStyle = style, appearanceAccent = accent) }
+                }
+            },
+        ),
     )
 }
 
 @Composable
-private fun Theme.displayLabel(): String {
-    return when (this) {
-        Theme.LIGHT -> stringResource(Res.string.settings_theme_light)
-        Theme.DARK -> stringResource(Res.string.settings_theme_dark)
-        Theme.SYSTEM -> stringResource(Res.string.settings_theme_system)
-    }
-}
+private fun Theme.displayLabel(): String = stringResource(when (this) {
+    Theme.LIGHT -> Res.string.settings_theme_light
+    Theme.DARK -> Res.string.settings_theme_dark
+    Theme.SYSTEM -> Res.string.settings_theme_system
+})
 
 @Composable
-private fun MillenniumPalette.displayLabel(): String = when (this) {
-    MillenniumPalette.Blue -> stringResource(Res.string.settings_palette_blue)
-    MillenniumPalette.Orange -> stringResource(Res.string.settings_palette_orange)
-    MillenniumPalette.Lime -> stringResource(Res.string.settings_palette_lime)
-}
+private fun AppearanceStyle.displayLabel(): String = stringResource(when (this) {
+    AppearanceStyle.CLASSIC -> Res.string.settings_style_classic
+    AppearanceStyle.GLASS -> Res.string.settings_style_glass
+    AppearanceStyle.MINIMAL -> Res.string.settings_style_minimal
+    AppearanceStyle.PIXEL -> Res.string.settings_style_pixel
+    AppearanceStyle.MONO -> Res.string.settings_style_mono
+})
+
+@Composable
+private fun AppearanceAccent?.displayLabel(): String = stringResource(when (this) {
+    null -> Res.string.settings_accent_automatic
+    AppearanceAccent.BLUE -> Res.string.settings_palette_blue
+    AppearanceAccent.ORANGE -> Res.string.settings_palette_orange
+    AppearanceAccent.LIME -> Res.string.settings_palette_lime
+    AppearanceAccent.TEAL -> Res.string.settings_accent_teal
+    AppearanceAccent.PLUM -> Res.string.settings_accent_plum
+})
 
 @Composable
 private fun AppearanceSettingCard(
-    selectedPalette: MillenniumPalette,
-    icon: (@Composable () -> Unit)? = null,
-    onSaved: (MillenniumPalette) -> Unit) {
-    var isDialogOpen by remember { mutableStateOf(false) }
-
+    settings: UserSettings,
+    onSaved: (AppearanceStyle, AppearanceAccent?) -> Unit,
+) {
+    var open by rememberSaveable { mutableStateOf(false) }
+    val dark = !isLightAppearance()
+    val currentColors = appearanceColors(settings, dark)
     SettingCardItem(
         title = stringResource(Res.string.settings_appearance_title),
         subtitle = stringResource(
-            Res.string.settings_appearance_subtitle_palette,
-            selectedPalette.displayLabel()),
-        icon = icon,
-        trailingContent = {
-            PaletteTrailingSwatch(selectedPalette)
-        },
-        onClick = { isDialogOpen = true })
-
-    if (isDialogOpen) {
-        var draftPalette by remember(selectedPalette, isDialogOpen) {
-            mutableStateOf(selectedPalette)
-        }
-
-        MillenniumDialog(visible = true, onDismissRequest = { isDialogOpen = false }) {
+            Res.string.settings_appearance_selection,
+            settings.appearanceStyle.displayLabel(),
+            settings.appearanceAccent.displayLabel(),
+        ),
+        icon = { SettingsItemIcon(Iconsax.IconsaxMagic, stringResource(Res.string.settings_appearance_title)) },
+        trailingContent = { Box(Modifier.size(20.dp).background(currentColors.accent, CircleShape)) },
+        onClick = { open = true },
+    )
+    if (open) {
+        var style by rememberSaveable(settings.appearanceStyle) { mutableStateOf(settings.appearanceStyle) }
+        var accent by rememberSaveable(settings.appearanceAccent) { mutableStateOf(settings.appearanceAccent) }
+        MillenniumDialog(visible = true, onDismissRequest = { open = false }) {
             MillenniumDialogHeader {
-                MillenniumDialogTitle(stringResource(Res.string.settings_palette_dialog_title))
+                MillenniumDialogTitle(stringResource(Res.string.settings_appearance_dialog_title))
                 MillenniumDialogClose()
             }
             MillenniumDialogBody {
-            MillenniumText(
-                stringResource(Res.string.settings_palette_dialog_description),
-                color = AppTheme.colors.onSurfaceVariant)
-            MillenniumText(
-                stringResource(Res.string.settings_palette_label),
-                color = AppTheme.colors.onSurface)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                MillenniumPalette.entries.forEach { palette ->
-                    PaletteSwatch(
-                        palette = palette,
-                        label = palette.displayLabel(),
-                        selected = palette == draftPalette,
-                        onClick = { draftPalette = palette })
-                }
-            }
-
-            PalettePreview(draftPalette)
+                AppearanceEditor(
+                    settings = settings.copy(appearanceStyle = style, appearanceAccent = accent),
+                    dark = dark,
+                    onStyleChange = { style = it },
+                    onAccentChange = { accent = it },
+                )
             }
             MillenniumDialogFooter {
-                MillenniumButton(
-                    onClick = { isDialogOpen = false },
-                    style = MillenniumButtonStyle.Secondary) {
+                MillenniumButton(onClick = { open = false }, style = MillenniumButtonStyle.Secondary) {
                     MillenniumText(stringResource(Res.string.common_cancel))
                 }
-                MillenniumButton(
-                    onClick = {
-                        onSaved(draftPalette)
-                        isDialogOpen = false
-                    }) {
+                MillenniumButton(onClick = {
+                    onSaved(style, accent)
+                    open = false
+                }) {
                     MillenniumText(stringResource(Res.string.common_save))
                 }
             }
@@ -200,70 +185,104 @@ private fun AppearanceSettingCard(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun PaletteSwatch(
-    palette: MillenniumPalette,
-    label: String,
-    selected: Boolean,
-    onClick: () -> Unit) {
-    val dark = !isLightAppearance()
-    val scheme = remember(palette, dark) { MillenniumColorSchemes().resolve(palette, dark = dark) }
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .clip(CircleShape)
-            .background(scheme.accent)
-            .border(
-                width = if (selected) 3.dp else 1.dp,
-                color = if (selected) AppTheme.colors.onSurface else AppTheme.colors.outlineVariant,
-                shape = CircleShape)
-            .clickable(onClick = onClick)
-            .semantics { contentDescription = label })
-}
-
-@Composable
-private fun PaletteTrailingSwatch(palette: MillenniumPalette) {
-    val dark = !isLightAppearance()
-    val scheme = remember(palette, dark) { MillenniumColorSchemes().resolve(palette, dark = dark) }
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalAlignment = Alignment.CenterVertically) {
-        Box(
-            Modifier
-                .size(width = 46.dp, height = 28.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(scheme.accent.copy(alpha = 0.35f)))
-        Box(
-            Modifier
-                .size(18.dp)
-                .clip(CircleShape)
-                .background(scheme.accent))
+internal fun AppearanceEditor(
+    settings: UserSettings,
+    dark: Boolean,
+    onStyleChange: (AppearanceStyle) -> Unit,
+    onAccentChange: (AppearanceAccent?) -> Unit,
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth().heightIn(max = 410.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        AppearancePreview(settings, dark)
+        MillenniumText(stringResource(Res.string.settings_visual_style), style = AppTheme.typography.titleMedium)
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            maxItemsInEachRow = 3,
+        ) {
+            AppearanceStyle.entries.forEach { option ->
+                val chosen = settings.appearanceStyle == option
+                val colors = appearanceColors(settings.copy(appearanceStyle = option, appearanceAccent = null), dark)
+                val shape = RoundedCornerShape(if (option == AppearanceStyle.PIXEL) 3.dp else 12.dp)
+                Column(
+                    Modifier.weight(1f).clip(shape).background(colors.surface)
+                        .border(if (chosen) 2.dp else 1.dp, if (chosen) colors.accent else colors.border, shape)
+                        .selectable(selected = chosen, role = Role.RadioButton, onClick = { onStyleChange(option) })
+                        .padding(horizontal = 8.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp),
+                ) {
+                    Box(Modifier.size(width = 30.dp, height = 12.dp).background(colors.accent, shape))
+                    MillenniumText(option.displayLabel(), color = colors.text, style = AppTheme.typography.labelMedium.copy(
+                        fontWeight = if (chosen) FontWeight.Bold else FontWeight.Normal,
+                    ))
+                }
+            }
+        }
+        MillenniumText(stringResource(Res.string.settings_appearance_accent_label), style = AppTheme.typography.titleMedium)
+        FlowRow(Modifier.fillMaxWidth().selectableGroup()) {
+            (listOf<AppearanceAccent?>(null) + AppearanceAccent.entries).forEach { option ->
+                val selected = option == settings.appearanceAccent
+                val label = option.displayLabel()
+                val color = option?.color(dark) ?: appearanceColors(settings.copy(appearanceAccent = null), dark).accent
+                val swatchShape = if (option == null) RoundedCornerShape(8.dp) else CircleShape
+                Box(
+                    modifier = Modifier.size(48.dp).selectable(
+                        selected = selected, role = Role.RadioButton, onClick = { onAccentChange(option) },
+                    ).semantics { contentDescription = label },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier.size(34.dp)
+                            .border(if (selected) 2.dp else 1.dp,
+                                if (selected) AppTheme.colors.onSurface else AppTheme.colors.outlineVariant,
+                                swatchShape)
+                            .padding(5.dp)
+                            .background(color, swatchShape),
+                    )
+                }
+            }
+        }
+        MillenniumText(settings.appearanceAccent.displayLabel(), color = AppTheme.colors.onSurfaceVariant,
+            style = AppTheme.typography.labelMedium)
     }
 }
 
 @Composable
-private fun PalettePreview(palette: MillenniumPalette) {
-    val dark = !isLightAppearance()
-    MillenniumTheme(dark = dark, config = MillenniumThemeConfig(palette = palette)) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(14.dp))
-                .background(MillenniumTheme.colors.surface)
-                .border(1.dp, MillenniumTheme.colors.border, RoundedCornerShape(14.dp))
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun AppearancePreview(settings: UserSettings, dark: Boolean) {
+    val colors = appearanceColors(settings, dark)
+    val shape = RoundedCornerShape(when (settings.appearanceStyle) {
+        AppearanceStyle.CLASSIC -> 12.dp
+        AppearanceStyle.GLASS -> 22.dp
+        AppearanceStyle.MINIMAL -> 10.dp
+        AppearanceStyle.PIXEL -> 2.dp
+        AppearanceStyle.MONO -> 6.dp
+    })
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(shape).background(colors.background)
+            .border(1.dp, colors.border, shape).padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(42.dp).background(colors.raised, shape), contentAlignment = Alignment.Center) {
+            MillenniumIcon(Iconsax.IconsaxMusic, contentDescription = null, tint = colors.text)
+        }
+        Column(Modifier.weight(1f)) {
             MillenniumText(
-                stringResource(Res.string.settings_preview_label),
-                color = MillenniumTheme.colors.muted)
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MillenniumButton(onClick = {}) {
-                    MillenniumText(stringResource(Res.string.settings_preview_button))
-                }
-                MillenniumButton(onClick = {}, style = MillenniumButtonStyle.Secondary) {
-                    MillenniumText(stringResource(Res.string.settings_preview_secondary))
-                }
-            }
+                stringResource(Res.string.settings_preview_player_title),
+                color = colors.text,
+                style = AppTheme.typography.titleMedium.copy(
+                    fontFamily = if (settings.appearanceStyle == AppearanceStyle.PIXEL) FontFamily.Monospace else FontFamily.SansSerif,
+                ),
+            )
+            MillenniumText(settings.appearanceStyle.displayLabel(), color = colors.muted, style = AppTheme.typography.bodySmall)
+        }
+        Box(Modifier.size(40.dp).background(colors.accent, shape), contentAlignment = Alignment.Center) {
+            MillenniumIcon(Iconsax.IconsaxPlay, contentDescription = null, tint = colors.onAccent)
         }
     }
 }

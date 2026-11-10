@@ -29,6 +29,16 @@ enum class Theme {
 }
 
 @Serializable
+enum class AppearanceStyle {
+    CLASSIC, GLASS, MINIMAL, PIXEL, MONO
+}
+
+@Serializable
+enum class AppearanceAccent {
+    BLUE, ORANGE, LIME, TEAL, PLUM
+}
+
+@Serializable
 data class UserSettings(
     // Language and Region
     // Stored under a new name: the old "language" field was persisted as EN for everyone while
@@ -40,6 +50,8 @@ data class UserSettings(
     // Appearance
     val theme: Theme = Theme.SYSTEM,
     val palette: MillenniumPalette = MillenniumPalette.Blue,
+    val appearanceStyle: AppearanceStyle = AppearanceStyle.CLASSIC,
+    val appearanceAccent: AppearanceAccent? = null,
 
     // Playback
     val streamingMusicFormat: AudioFormat = defaultStreamingMusicFormat(),
