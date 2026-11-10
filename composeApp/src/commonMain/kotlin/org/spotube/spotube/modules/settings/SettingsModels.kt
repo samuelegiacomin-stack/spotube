@@ -30,7 +30,7 @@ enum class Theme {
 
 @Serializable
 enum class AppearanceStyle {
-    CLASSIC, GLASS, MINIMAL, PIXEL, MONO
+    CLASSIC, GLASS, MINIMAL, PIXEL, MONO, TORMENTIL, BLUE_POND, STRAWBERRIES
 }
 
 @Serializable

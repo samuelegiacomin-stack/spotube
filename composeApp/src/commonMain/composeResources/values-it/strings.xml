@@ -173,6 +173,10 @@
     <string name="settings_style_minimal">Minimal</string>
     <string name="settings_style_pixel">Pixel</string>
     <string name="settings_style_mono">Monocromo</string>
+    <string name="settings_style_illustrated">Temi illustrati</string>
+    <string name="settings_style_tormentil">Bosco di Tormentilla</string>
+    <string name="settings_style_blue_pond">Stagno Blu</string>
+    <string name="settings_style_strawberries">Latte e Fragole</string>
     <string name="settings_accent_automatic">Colore dello stile</string>
     <string name="settings_accent_teal">Petrolio</string>
     <string name="settings_accent_plum">Prugna</string>

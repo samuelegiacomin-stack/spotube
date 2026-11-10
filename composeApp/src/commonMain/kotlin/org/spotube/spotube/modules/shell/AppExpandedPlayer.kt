@@ -38,11 +38,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 
+import org.spotube.spotube.core.ui.theming.AppearanceIllustration
+import org.spotube.spotube.core.ui.theming.appearanceBackground
+import org.spotube.spotube.core.ui.theming.appearanceTransportSurface
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.core.ui.theming.AppTheme
 import org.spotube.millennium.composables.MillenniumSnackbarHost
 import org.spotube.millennium.composables.MillenniumSnackbarHostState
@@ -223,7 +228,12 @@ fun AppExpandedPlayer(
         }
     }
 
-    Box(modifier = modifier.fillMaxSize().background(AppTheme.colors.background)) {
+    val appearance = AppTheme.appearance
+    val illustrated = appearance.isIllustrated
+    val skipButtonStyle = if (illustrated) {
+        MillenniumIconButtonStyle.Secondary
+    } else MillenniumIconButtonStyle.Quiet
+    Box(modifier = modifier.fillMaxSize().appearanceBackground()) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -274,7 +284,7 @@ fun AppExpandedPlayer(
                         .fillMaxWidth(0.84f)
                         .aspectRatio(1f)
                         .then(albumArtModifier)
-                        .clip(RoundedCornerShape(22.dp))
+                        .clip(if (illustrated) AppTheme.shapes.large else RoundedCornerShape(22.dp))
                         .background(AppTheme.colors.surfaceContainerHighest)
                 ) {
                     AsyncImage(
@@ -365,7 +375,8 @@ fun AppExpandedPlayer(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 16.dp, bottom = 12.dp),
+                        .padding(top = 16.dp, bottom = 12.dp)
+                        .appearanceTransportSurface(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -384,7 +395,7 @@ fun AppExpandedPlayer(
                         modifier = Modifier.playerPressFeedback(!isJamGuest),
                         onClick = ::onSkipPrevious,
                         enabled = !isJamGuest,
-                        style = MillenniumIconButtonStyle.Quiet
+                        style = skipButtonStyle
                     ) {
                         MillenniumIcon(Iconsax.IconsaxPrevious, contentDescription = stringResource(Res.string.player_previous_content_description))
                     }
@@ -404,7 +415,7 @@ fun AppExpandedPlayer(
                         modifier = Modifier.playerPressFeedback(!isJamGuest),
                         onClick = ::onSkipNext,
                         enabled = !isJamGuest,
-                        style = MillenniumIconButtonStyle.Quiet
+                        style = skipButtonStyle
                     ) {
                         MillenniumIcon(Iconsax.IconsaxNext, contentDescription = stringResource(Res.string.player_next_content_description))
                     }
@@ -421,6 +432,13 @@ fun AppExpandedPlayer(
                             repeatOne = playerUiState.loopState == LoopState.ONE)
                     }
                 }
+            }
+
+            if (illustrated) {
+                AppearanceIllustration(
+                    appearance,
+                    modifier = Modifier.widthIn(max = 460.dp).clip(AppTheme.shapes.large),
+                )
             }
 
             LyricsPreviewCard(

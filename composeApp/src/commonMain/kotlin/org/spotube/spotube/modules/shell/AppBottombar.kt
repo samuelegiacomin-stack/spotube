@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.NavigationItem
 import org.jetbrains.compose.resources.stringResource
 import org.spotube.spotube.bottombarTabs
@@ -44,7 +45,7 @@ fun AppBottombar(
     modifier: Modifier = Modifier,
     libraryBadge: @Composable () -> Unit = { DownloadBadgeIndicator() }
 ) {
-    val dockModifier = if (AppTheme.appearance == AppearanceStyle.GLASS) {
+    val dockModifier = if (AppTheme.appearance == AppearanceStyle.GLASS || AppTheme.appearance.isIllustrated) {
         modifier.padding(horizontal = 10.dp).clip(AppTheme.shapes.large)
     } else modifier
     MillenniumBottomNavigationBar(modifier = dockModifier) {

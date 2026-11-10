@@ -24,7 +24,9 @@ import org.spotube.millennium.composables.MillenniumModalBottomSheet
 import org.spotube.millennium.theme.MillenniumTheme
 import org.spotube.millennium.theme.millenniumPanelBrush
 import org.spotube.millennium.theme.millenniumSurface
+import org.spotube.spotube.core.ui.theming.AppearanceMotif
 import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.core.ui.component.TrackOptionsAction
 import org.spotube.spotube.modules.downloads.DownloadStatus
 import org.spotube.spotube.modules.downloads.DownloadProgressIcon
@@ -33,6 +35,7 @@ import org.spotube.spotube.resources.iconsax.IconsaxCloseSquare
 import org.spotube.spotube.resources.iconsax.IconsaxCheckCircle
 import org.spotube.spotube.resources.iconsax.IconsaxRefreshRight
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.SolidColor
 import org.jetbrains.compose.resources.stringResource
 import org.spotube.millennium.composables.MillenniumIcon
 import org.spotube.millennium.composables.MillenniumIconButton
@@ -175,8 +178,18 @@ private fun PlayerOptionsGrid(items: List<AdaptiveMenuItem>, onDismiss: () -> Un
     LaunchedEffect(sheetState.bottomSheetState.currentDetent) {
         if (sheetState.bottomSheetState.currentDetent == SheetDetent.Hidden) onDismiss()
     }
+    val appearance = AppTheme.appearance
+    val illustrated = appearance.isIllustrated
+    val panel = if (illustrated) SolidColor(AppTheme.colors.surfaceContainerHigh)
+        else millenniumPanelBrush(MillenniumTheme.colors)
+    val tileShape = if (illustrated) AppTheme.shapes.medium else RoundedCornerShape(14.dp)
     MillenniumModalBottomSheet(state = sheetState,
         contentPadding = PaddingValues(vertical = 8.dp), contentSpacing = 4.dp) {
+        if (illustrated) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                AppearanceMotif(appearance, AppTheme.colors.primary, Modifier.size(22.dp))
+            }
+        }
         LazyVerticalGrid(
             columns = GridCells.Fixed(3), contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -185,9 +198,9 @@ private fun PlayerOptionsGrid(items: List<AdaptiveMenuItem>, onDismiss: () -> Un
             items(items.size) { index ->
                 val item = items[index]
                 Box(Modifier.aspectRatio(1f)
-                    .millenniumSurface(background = millenniumPanelBrush(MillenniumTheme.colors),
-                        shape = RoundedCornerShape(14.dp), borderColor = MillenniumTheme.colors.border,
-                        borderWidth = 1.dp, shadowElevation = 2.dp)
+                    .millenniumSurface(background = panel,
+                        shape = tileShape, borderColor = MillenniumTheme.colors.border,
+                        borderWidth = 1.dp, shadowElevation = if (illustrated) 0.dp else 2.dp)
                     .playerPressFeedback(item.enabled)
                     .clickable(enabled = item.enabled) { onDismiss(); item.onClick() }
                     .padding(12.dp), contentAlignment = Alignment.Center) {

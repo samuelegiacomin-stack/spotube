@@ -19,7 +19,6 @@ package org.spotube.spotube.modules.shell
 
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -60,6 +59,7 @@ import com.composeunstyled.UnstyledBottomSheet
 import com.composeunstyled.rememberBottomSheetState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import org.spotube.spotube.core.ui.theming.appearanceBackground
 import org.spotube.spotube.core.navigation.NavigationCommands
 import org.spotube.spotube.core.navigation.NavigationState
 import org.spotube.spotube.core.navigation.Navigator
@@ -80,7 +80,6 @@ import org.koin.compose.viewmodel.koinViewModel
 import org.spotube.millennium.composables.MillenniumSeparator
 import org.spotube.millennium.composables.MillenniumSnackbarHost
 import org.spotube.millennium.composables.MillenniumSnackbarHostState
-import org.spotube.millennium.theme.MillenniumTheme
 
 val LocalAppShellBottomInset = staticCompositionLocalOf { 0.dp }
 
@@ -159,7 +158,7 @@ fun AppShell(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(MillenniumTheme.colors.background)
+                            .appearanceBackground()
                             .hazeSource(state = bgHazeState) // <-- Put it here!
                     )
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -231,7 +230,7 @@ fun AppShell(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(MillenniumTheme.colors.background)
+                            .appearanceBackground()
                     )
                     CompactPlayerOverlay(
                         navigator = navigator,
@@ -276,7 +275,7 @@ fun AppShell(
                         ) {
                             Box(
                                 modifier = Modifier.fillMaxSize()
-                                    .background(MillenniumTheme.colors.background)
+                                    .appearanceBackground()
                             ) {
                                 LyricsScreen(
                                     modifier = Modifier.fillMaxSize(),

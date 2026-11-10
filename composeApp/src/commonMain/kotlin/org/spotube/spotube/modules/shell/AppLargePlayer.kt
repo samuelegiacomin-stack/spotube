@@ -57,6 +57,7 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.blur.HazeColorEffect
 import dev.chrisbanes.haze.blur.blurEffect
 import dev.chrisbanes.haze.hazeEffect
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.core.audioplayer.AudioPlayerInterface
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.ui.component.playerPressFeedback
@@ -220,6 +221,9 @@ fun AppLargePlayer(
     // A translucent tint (not near-opaque) so the blurred art behind still reads through, and
     // the material's watery caustics sit on top of it.
     val surfaceTint = AppTheme.colors.surface.copy(alpha = 0.6f)
+    val skipButtonStyle = if (AppTheme.appearance.isIllustrated) {
+        MillenniumIconButtonStyle.Secondary
+    } else MillenniumIconButtonStyle.Quiet
 
     Column(
         modifier = modifier
@@ -343,7 +347,7 @@ fun AppLargePlayer(
                             modifier = Modifier.playerPressFeedback(!isJamGuest),
                             onClick = ::onSkipPrevious,
                             enabled = !isJamGuest,
-                            style = MillenniumIconButtonStyle.Quiet
+                            style = skipButtonStyle
                         ) {
                             MillenniumIcon(Iconsax.IconsaxPrevious, contentDescription = stringResource(Res.string.player_previous_content_description))
                         }
@@ -362,7 +366,7 @@ fun AppLargePlayer(
                             modifier = Modifier.playerPressFeedback(!isJamGuest),
                             onClick = ::onSkipNext,
                             enabled = !isJamGuest,
-                            style = MillenniumIconButtonStyle.Quiet
+                            style = skipButtonStyle
                         ) {
                             MillenniumIcon(Iconsax.IconsaxNext, contentDescription = stringResource(Res.string.player_next_content_description))
                         }

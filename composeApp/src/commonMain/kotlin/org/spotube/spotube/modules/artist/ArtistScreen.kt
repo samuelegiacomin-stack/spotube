@@ -18,6 +18,7 @@
 package org.spotube.spotube.modules.artist
 
 
+import org.spotube.spotube.core.ui.theming.appearanceBackground
 import org.spotube.spotube.core.ui.misc.itemsWithUniqueKeys
 import org.spotube.millennium.composables.MillenniumIcon
 import org.spotube.millennium.composables.MillenniumButton
@@ -26,7 +27,6 @@ import org.spotube.millennium.composables.MillenniumIconButton
 import org.spotube.millennium.composables.MillenniumIconButtonStyle
 import org.spotube.millennium.composables.MillenniumCard
 import org.spotube.millennium.composables.MillenniumTooltip
-import org.spotube.millennium.theme.MillenniumTheme
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -122,7 +122,7 @@ fun ArtistScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MillenniumTheme.colors.background)
+            .appearanceBackground()
     ) {
         ApplicationMainBar()
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {

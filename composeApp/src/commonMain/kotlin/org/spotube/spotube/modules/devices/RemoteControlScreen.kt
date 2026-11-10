@@ -55,6 +55,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 
+import org.spotube.spotube.core.ui.theming.appearanceBackground
 import org.spotube.spotube.core.ui.theming.AppTheme
 import com.composeunstyled.Text
 import com.composeunstyled.LocalTextStyle
@@ -151,7 +152,7 @@ fun RemoteControlScreen(
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(MillenniumTheme.colors.background)
+            .appearanceBackground()
     ) {
         val isWide = maxWidth >= WideLayoutMinWidth
 

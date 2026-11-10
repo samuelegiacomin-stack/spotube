@@ -23,8 +23,6 @@ import org.spotube.millennium.composables.MillenniumIconButton
 import org.spotube.millennium.composables.MillenniumIconButtonStyle
 import org.spotube.millennium.composables.MillenniumButton
 import org.spotube.millennium.composables.MillenniumButtonStyle
-import org.spotube.millennium.theme.MillenniumTheme
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +37,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 
+import org.spotube.spotube.core.ui.theming.appearanceBackground
 import org.spotube.spotube.core.ui.theming.AppTheme
 import com.composeunstyled.Text
 import org.spotube.millennium.composables.MillenniumPullToRefreshBox
@@ -136,7 +135,7 @@ fun HomeScreen(viewModel: HomeScreenViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MillenniumTheme.colors.background)
+            .appearanceBackground()
     ) {
         ApplicationMainBar(
             backButton = false,

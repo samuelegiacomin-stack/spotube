@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -61,7 +62,10 @@ import org.spotube.millennium.composables.MillenniumDialogHeader
 import org.spotube.millennium.composables.MillenniumDialogTitle
 import org.spotube.millennium.composables.MillenniumIcon
 import org.spotube.millennium.composables.MillenniumText
+import org.spotube.spotube.core.ui.theming.AppearanceIllustration
+import org.spotube.spotube.core.ui.theming.AppearanceMotif
 import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.core.ui.theming.appearanceColors
 import org.spotube.spotube.core.ui.theming.color
 import org.spotube.spotube.core.ui.theming.isLightAppearance
@@ -123,6 +127,9 @@ private fun AppearanceStyle.displayLabel(): String = stringResource(when (this) 
     AppearanceStyle.MINIMAL -> Res.string.settings_style_minimal
     AppearanceStyle.PIXEL -> Res.string.settings_style_pixel
     AppearanceStyle.MONO -> Res.string.settings_style_mono
+    AppearanceStyle.TORMENTIL -> Res.string.settings_style_tormentil
+    AppearanceStyle.BLUE_POND -> Res.string.settings_style_blue_pond
+    AppearanceStyle.STRAWBERRIES -> Res.string.settings_style_strawberries
 })
 
 @Composable
@@ -198,6 +205,31 @@ internal fun AppearanceEditor(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         AppearancePreview(settings, dark)
+        MillenniumText(stringResource(Res.string.settings_style_illustrated), style = AppTheme.typography.titleMedium)
+        Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            AppearanceStyle.entries.filter { it.isIllustrated }.forEach { option ->
+                val selected = option == settings.appearanceStyle
+                val colors = appearanceColors(settings.copy(appearanceStyle = option, appearanceAccent = null), dark)
+                val shape = RoundedCornerShape(14.dp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().clip(shape).background(colors.surface)
+                        .border(if (selected) 2.dp else 1.dp, if (selected) colors.accent else colors.border, shape)
+                        .selectable(selected = selected, role = Role.RadioButton, onClick = { onStyleChange(option) })
+                        .heightIn(min = 48.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    AppearanceMotif(option, colors.accent, Modifier.size(22.dp))
+                    MillenniumText(
+                        option.displayLabel(),
+                        color = colors.text,
+                        style = AppTheme.typography.bodyMedium.copy(
+                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                        ),
+                    )
+                }
+            }
+        }
         MillenniumText(stringResource(Res.string.settings_visual_style), style = AppTheme.typography.titleMedium)
         FlowRow(
             modifier = Modifier.fillMaxWidth().selectableGroup(),
@@ -205,7 +237,7 @@ internal fun AppearanceEditor(
             verticalArrangement = Arrangement.spacedBy(8.dp),
             maxItemsInEachRow = 3,
         ) {
-            AppearanceStyle.entries.forEach { option ->
+            AppearanceStyle.entries.filterNot { it.isIllustrated }.forEach { option ->
                 val chosen = settings.appearanceStyle == option
                 val colors = appearanceColors(settings.copy(appearanceStyle = option, appearanceAccent = null), dark)
                 val shape = RoundedCornerShape(if (option == AppearanceStyle.PIXEL) 3.dp else 12.dp)
@@ -261,28 +293,42 @@ private fun AppearancePreview(settings: UserSettings, dark: Boolean) {
         AppearanceStyle.MINIMAL -> 10.dp
         AppearanceStyle.PIXEL -> 2.dp
         AppearanceStyle.MONO -> 6.dp
+        AppearanceStyle.TORMENTIL -> 14.dp
+        AppearanceStyle.BLUE_POND -> 24.dp
+        AppearanceStyle.STRAWBERRIES -> 20.dp
     })
-    Row(
-        modifier = Modifier.fillMaxWidth().clip(shape).background(colors.background)
-            .border(1.dp, colors.border, shape).padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(42.dp).background(colors.raised, shape), contentAlignment = Alignment.Center) {
-            MillenniumIcon(Iconsax.IconsaxMusic, contentDescription = null, tint = colors.text)
+    Column(Modifier.fillMaxWidth().clip(shape).background(colors.background).border(1.dp, colors.border, shape)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(42.dp).background(colors.raised, shape), contentAlignment = Alignment.Center) {
+                MillenniumIcon(Iconsax.IconsaxMusic, contentDescription = null, tint = colors.text)
+            }
+            Column(Modifier.weight(1f)) {
+                MillenniumText(
+                    stringResource(Res.string.settings_preview_player_title),
+                    color = colors.text,
+                    style = AppTheme.typography.titleMedium.copy(
+                        fontFamily = when (settings.appearanceStyle) {
+                            AppearanceStyle.PIXEL -> FontFamily.Monospace
+                            AppearanceStyle.TORMENTIL -> FontFamily.Serif
+                            else -> FontFamily.SansSerif
+                        },
+                    ),
+                )
+                MillenniumText(settings.appearanceStyle.displayLabel(), color = colors.muted, style = AppTheme.typography.bodySmall)
+            }
+            Box(Modifier.size(40.dp).background(colors.accent, shape), contentAlignment = Alignment.Center) {
+                MillenniumIcon(Iconsax.IconsaxPlay, contentDescription = null, tint = colors.onAccent)
+            }
         }
-        Column(Modifier.weight(1f)) {
-            MillenniumText(
-                stringResource(Res.string.settings_preview_player_title),
-                color = colors.text,
-                style = AppTheme.typography.titleMedium.copy(
-                    fontFamily = if (settings.appearanceStyle == AppearanceStyle.PIXEL) FontFamily.Monospace else FontFamily.SansSerif,
-                ),
+        if (settings.appearanceStyle.isIllustrated) {
+            AppearanceIllustration(
+                settings.appearanceStyle,
+                Modifier.align(Alignment.CenterHorizontally).widthIn(max = 218.dp),
             )
-            MillenniumText(settings.appearanceStyle.displayLabel(), color = colors.muted, style = AppTheme.typography.bodySmall)
-        }
-        Box(Modifier.size(40.dp).background(colors.accent, shape), contentAlignment = Alignment.Center) {
-            MillenniumIcon(Iconsax.IconsaxPlay, contentDescription = null, tint = colors.onAccent)
         }
     }
 }

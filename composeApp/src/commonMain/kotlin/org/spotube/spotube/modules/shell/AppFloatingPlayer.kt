@@ -42,6 +42,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 
+import org.spotube.spotube.core.ui.component.playerPressFeedback
+import org.spotube.spotube.core.ui.theming.AppearanceMotif
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.core.ui.theming.AppTheme
 import com.composeunstyled.Text
 import androidx.compose.runtime.Composable
@@ -218,9 +221,16 @@ internal fun FloatingPlayerContent(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (appearance.isIllustrated) {
+                        AppearanceMotif(
+                            appearance, AppTheme.colors.primary,
+                            Modifier.padding(horizontal = 6.dp).size(16.dp),
+                        )
+                    }
                     heartButton()
                     Spacer(modifier = Modifier.size(8.dp))
                     MillenniumIconButton(
+                        modifier = Modifier.playerPressFeedback(playerUiState.queue.isNotEmpty()),
                         onClick = onPlayPause,
                         enabled = playerUiState.queue.isNotEmpty(),
                         style = MillenniumIconButtonStyle.Secondary

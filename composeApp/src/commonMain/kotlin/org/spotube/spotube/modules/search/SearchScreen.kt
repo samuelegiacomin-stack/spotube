@@ -29,7 +29,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -84,13 +83,13 @@ import org.spotube.millennium.composables.MillenniumIcon
 import org.spotube.millennium.composables.MillenniumListTile
 import org.spotube.millennium.composables.MillenniumMarqueeProgress
 import org.spotube.millennium.composables.MillenniumText
-import org.spotube.millennium.theme.MillenniumTheme
 import org.spotube.plugin_interfaces.plugin_apis.metadata.album.MetadataAlbum
 import org.spotube.plugin_interfaces.plugin_apis.metadata.artist.MetadataArtist
 import org.spotube.plugin_interfaces.plugin_apis.metadata.playlist.MetadataPlaylist
 import org.spotube.plugin_interfaces.plugin_apis.metadata.search.MetadataSupportedSearchType
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 import org.spotube.plugin_interfaces.plugin_apis.metadata.user.MetadataUser
+import org.spotube.spotube.core.ui.theming.appearanceBackground
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.QueueEntry
 import org.spotube.spotube.core.jam.JamRole
@@ -320,7 +319,7 @@ fun SearchScreen(viewModel: SearchScreenViewModel = koinViewModel()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MillenniumTheme.colors.background)
+            .appearanceBackground()
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         if (!isExpanded) {

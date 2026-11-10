@@ -226,6 +226,9 @@ fun SpotubeTheme(
             AppearanceStyle.MINIMAL -> 10.dp
             AppearanceStyle.PIXEL -> 2.dp
             AppearanceStyle.MONO -> 6.dp
+            AppearanceStyle.TORMENTIL -> 14.dp
+            AppearanceStyle.BLUE_POND -> 24.dp
+            AppearanceStyle.STRAWBERRIES -> 20.dp
         }
         if (appearance == AppearanceStyle.CLASSIC) AppDefaultShapes else AppShapes(
             small = RoundedCornerShape(radius / 2),
@@ -235,11 +238,22 @@ fun SpotubeTheme(
         )
     }
     val typography = remember(appearance) {
-        if (appearance == AppearanceStyle.PIXEL) AppDefaultTypography.copy(
-            titleMedium = AppDefaultTypography.titleMedium.copy(fontFamily = FontFamily.Monospace),
-            labelMedium = AppDefaultTypography.labelMedium.copy(fontFamily = FontFamily.Monospace),
-            labelSmall = AppDefaultTypography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-        ) else AppDefaultTypography
+        when (appearance) {
+            AppearanceStyle.PIXEL -> AppDefaultTypography.copy(
+                titleMedium = AppDefaultTypography.titleMedium.copy(fontFamily = FontFamily.Monospace),
+                labelMedium = AppDefaultTypography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                labelSmall = AppDefaultTypography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            )
+            AppearanceStyle.TORMENTIL -> AppDefaultTypography.copy(
+                headlineSmall = AppDefaultTypography.headlineSmall.copy(fontFamily = FontFamily.Serif),
+                titleMedium = AppDefaultTypography.titleMedium.copy(fontFamily = FontFamily.Serif),
+            )
+            AppearanceStyle.BLUE_POND, AppearanceStyle.STRAWBERRIES -> AppDefaultTypography.copy(
+                headlineSmall = AppDefaultTypography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                titleMedium = AppDefaultTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
+            )
+            else -> AppDefaultTypography
+        }
     }
 
     val darkTheme = MillenniumDarkThemeComponents

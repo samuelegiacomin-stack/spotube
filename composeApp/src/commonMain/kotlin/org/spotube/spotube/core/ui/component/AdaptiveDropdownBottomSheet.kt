@@ -62,7 +62,9 @@ import com.composeunstyled.SheetDetent
 import com.composeunstyled.rememberModalBottomSheetState
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Check
+import org.spotube.spotube.core.ui.theming.AppearanceMotif
 import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.resources.iconsax.Iconsax
 import org.spotube.spotube.resources.iconsax.Iconsax3DotsMore
 import org.spotube.spotube.resources.iconsax.IconsaxHeart
@@ -172,6 +174,13 @@ private fun AdaptiveBottomSheetContent(
         contentSpacing = 4.dp) {
         Column(
             modifier = Modifier.fillMaxWidth()) {
+            val appearance = AppTheme.appearance
+            if (appearance.isIllustrated) {
+                AppearanceMotif(
+                    appearance, AppTheme.colors.primary,
+                    Modifier.align(Alignment.CenterHorizontally).size(22.dp),
+                )
+            }
             header?.invoke()
 
             if (filter != null) {

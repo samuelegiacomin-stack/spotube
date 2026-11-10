@@ -41,6 +41,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.shape.CircleShape
 
+import org.spotube.spotube.core.ui.theming.appearanceBackground
 import org.spotube.spotube.core.ui.theming.AppTheme
 
 import com.composeunstyled.Text
@@ -116,7 +117,7 @@ fun DevicesScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MillenniumTheme.colors.background)
+            .appearanceBackground()
     ) {
         ApplicationMainBar(
             backButton = true,
