@@ -2,6 +2,14 @@
 package org.spotube.spotube.core.ui.theming
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.unit.dp
+import org.spotube.millennium.composables.MillenniumButtonThemeProperties
+import org.spotube.millennium.composables.MillenniumIconButtonThemeProperties
+import org.spotube.millennium.theme.MillenniumControlStateProperty
+import org.spotube.millennium.theme.MillenniumThemeComponents
 import org.spotube.millennium.theme.MillenniumColorSchemes
 import org.spotube.millennium.theme.MillenniumColors
 import org.spotube.millennium.theme.resolve
@@ -84,3 +92,59 @@ internal fun appearanceColors(settings: UserSettings, dark: Boolean): Millennium
         onAccent = if (dark) Color(0xFF14171C) else Color.White,
     )
 }
+
+internal fun MillenniumThemeComponents.illustratedButtons(
+    colors: MillenniumColors,
+    buttonShape: Shape,
+): MillenniumThemeComponents {
+    fun MillenniumControlStateProperty<MillenniumButtonThemeProperties>.matteButton(
+        fill: Color,
+        foreground: Color,
+    ) = matteStates { props, tint ->
+        props.copy(
+            background = SolidColor(lerp(fill, foreground, tint)),
+            foreground = foreground,
+            shape = buttonShape,
+            innerGlowColor = Color.Transparent,
+            bottomRimColor = Color.Transparent,
+            shadows = emptyList(),
+            shadowElevation = 0.dp,
+        )
+    }
+
+    fun MillenniumControlStateProperty<MillenniumIconButtonThemeProperties>.matteIconButton(
+        fill: Color,
+        foreground: Color,
+    ) = matteStates { props, tint ->
+        props.copy(
+            background = SolidColor(lerp(fill, foreground, tint)),
+            foreground = foreground,
+            orb = false,
+            innerGlowColor = Color.Transparent,
+            bottomRimColor = Color.Transparent,
+            shadows = emptyList(),
+            shadowElevation = 0.dp,
+        )
+    }
+
+    return copy(
+        buttonTheme = buttonTheme.copy(
+            primary = buttonTheme.primary.matteButton(colors.accent, colors.onAccent),
+            secondary = buttonTheme.secondary.matteButton(colors.surface, colors.text),
+        ),
+        iconButtonTheme = iconButtonTheme.copy(
+            primary = iconButtonTheme.primary.matteIconButton(colors.accent, colors.onAccent),
+            secondary = iconButtonTheme.secondary.matteIconButton(colors.surface, colors.text),
+        ),
+    )
+}
+
+private fun <T> MillenniumControlStateProperty<T>.matteStates(transform: (T, Float) -> T) = copy(
+    default = transform(default, 0f),
+    hovered = transform(hovered, 0.04f),
+    focused = transform(focused, 0.04f),
+    pressed = transform(pressed, 0.08f),
+    disabled = transform(disabled, 0f),
+    selected = transform(selected, 0.04f),
+    error = error,
+)

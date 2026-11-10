@@ -27,7 +27,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
-import com.composeunstyled.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -41,6 +40,7 @@ import org.spotube.spotube.core.discovery.rememberLocalNetworkPermissionRequeste
 import org.spotube.spotube.core.navigation.NavigationCommands
 import org.spotube.spotube.core.navigation.Routes
 import org.spotube.spotube.core.ui.component.ApplicationMainBar
+import org.spotube.spotube.core.ui.theming.AppearancePageTitle
 import spotube.composeapp.generated.resources.*
 import org.spotube.spotube.modules.settings.sections.appearanceSection
 import org.spotube.spotube.modules.settings.sections.cacheSection
@@ -94,7 +94,7 @@ private fun CompactSettingsScreen(settingsViewModel: SettingsViewModel) {
     Column(modifier = Modifier.fillMaxSize()) {
         ApplicationMainBar(
             title = {
-                Text(stringResource(Res.string.settings_screen_title))
+                AppearancePageTitle(stringResource(Res.string.settings_screen_title))
             },
             backButton = false
         )

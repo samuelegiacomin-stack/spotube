@@ -39,13 +39,13 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composeunstyled.Text
 import com.composeunstyled.currentWindowWidthBreakpoint
 import org.spotube.spotube.getPlatform
 import org.spotube.spotube.isDesktop
 import org.spotube.spotube.core.ui.component.ApplicationMainBar
+import org.spotube.spotube.core.ui.theming.AppearancePageTitle
 import org.spotube.spotube.modules.downloads.DownloadsScreen
 import org.spotube.spotube.modules.library.album.LibraryAlbumsScreen
 import org.spotube.spotube.modules.library.artist.LibraryArtistsScreen
@@ -166,10 +166,8 @@ internal fun LibraryToolbarTitle(
             autoFocus = true
         )
     } else if (!expandedDesktop) {
-        Text(
-            stringResource(if (compactDesktop) Res.string.library_toolbar_compact_title else Res.string.library_screen_title),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
+        AppearancePageTitle(
+            stringResource(if (compactDesktop) Res.string.library_toolbar_compact_title else Res.string.library_screen_title)
         )
     }
 }

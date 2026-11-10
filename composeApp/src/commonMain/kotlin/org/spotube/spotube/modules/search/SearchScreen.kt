@@ -39,6 +39,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -89,7 +90,10 @@ import org.spotube.plugin_interfaces.plugin_apis.metadata.playlist.MetadataPlayl
 import org.spotube.plugin_interfaces.plugin_apis.metadata.search.MetadataSupportedSearchType
 import org.spotube.plugin_interfaces.plugin_apis.metadata.track.MetadataTrack
 import org.spotube.plugin_interfaces.plugin_apis.metadata.user.MetadataUser
+import org.spotube.spotube.core.ui.theming.AppearanceIllustration
+import org.spotube.spotube.core.ui.theming.AppearancePageTitle
 import org.spotube.spotube.core.ui.theming.appearanceBackground
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.QueueEntry
 import org.spotube.spotube.core.jam.JamRole
@@ -123,6 +127,7 @@ import org.spotube.spotube.resources.iconsax.IconsaxSearchBroken
 import org.spotube.spotube.resources.iconsax.IconsaxTrash
 import org.spotube.spotube.resources.iconsax.InconsaxClock
 import spotube.composeapp.generated.resources.Res
+import spotube.composeapp.generated.resources.nav_search
 import spotube.composeapp.generated.resources.library_tab_albums
 import spotube.composeapp.generated.resources.library_tab_artists
 import spotube.composeapp.generated.resources.library_tab_playlists
@@ -323,6 +328,12 @@ fun SearchScreen(viewModel: SearchScreenViewModel = koinViewModel()) {
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         if (!isExpanded) {
+            if (AppTheme.appearance.isIllustrated) {
+                AppearancePageTitle(
+                    stringResource(Res.string.nav_search),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                )
+            }
             SearchBar(
                 query = state.query,
                 onQueryChange = viewModel::onQueryChange,
@@ -530,6 +541,7 @@ private fun SearchBar(
     onClearAllRecentSearches: () -> Unit
 ) {
     val hasRecentSearchSuggestions = recentSearchSuggestions.isNotEmpty()
+    val illustrated = AppTheme.appearance.isIllustrated
     val searchState = rememberTextFieldState(query)
 
     LaunchedEffect(searchState) {
@@ -548,10 +560,10 @@ private fun SearchBar(
         suggestionLabel = { it },
         leadingContent = {
             MillenniumIcon(
-                imageVector = Iconsax.InconsaxClock,
+                imageVector = if (illustrated) Iconsax.IconsaxSearchBroken else Iconsax.InconsaxClock,
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),
-                tint = AppTheme.colors.onSurfaceVariant
+                tint = if (illustrated) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant
             )
         },
         placeholder = stringResource(Res.string.search_placeholder),
@@ -645,7 +657,11 @@ private fun SearchAllTab(
     modifier: Modifier = Modifier
 ) {
     if (query.isBlank()) {
-        SearchMessage(message = stringResource(Res.string.search_start_typing), modifier = modifier)
+        SearchMessage(
+            message = stringResource(Res.string.search_start_typing),
+            modifier = modifier,
+            showArtwork = true,
+        )
         return
     }
 
@@ -791,7 +807,11 @@ private fun SearchTracksTab(
     modifier: Modifier = Modifier
 ) {
     if (query.isBlank()) {
-        SearchMessage(message = stringResource(Res.string.search_start_typing_tracks), modifier = modifier)
+        SearchMessage(
+            message = stringResource(Res.string.search_start_typing_tracks),
+            modifier = modifier,
+            showArtwork = true,
+        )
         return
     }
 
@@ -928,7 +948,11 @@ private fun <T> SearchGridTab(
     itemContent: @Composable (T) -> Unit
 ) {
     if (query.isBlank()) {
-        SearchMessage(message = stringResource(Res.string.search_start_typing), modifier = modifier)
+        SearchMessage(
+            message = stringResource(Res.string.search_start_typing),
+            modifier = modifier,
+            showArtwork = true,
+        )
         return
     }
 
@@ -1179,12 +1203,18 @@ private fun SearchLoadingIndicator(
 private fun SearchMessage(
     message: String,
     modifier: Modifier = Modifier,
-    isError: Boolean = false
+    isError: Boolean = false,
+    showArtwork: Boolean = false,
 ) {
-    Box(
+    val appearance = AppTheme.appearance
+    Column(
         modifier = modifier,
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
     ) {
+        if (showArtwork && appearance.isIllustrated) {
+            AppearanceIllustration(appearance, Modifier.widthIn(max = 218.dp))
+        }
         Text(
             text = message,
             color = if (isError) AppTheme.colors.error else AppTheme.colors.onSurfaceVariant,

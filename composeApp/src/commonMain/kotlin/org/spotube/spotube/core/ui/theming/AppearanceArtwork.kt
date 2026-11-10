@@ -5,9 +5,12 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,7 +22,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.composeunstyled.Text
 import org.jetbrains.compose.resources.painterResource
 import org.spotube.spotube.modules.settings.AppearanceStyle
 import spotube.composeapp.generated.resources.Res
@@ -36,6 +41,25 @@ private val AppearanceStyle.artwork
     }
 
 internal val AppearanceStyle.isIllustrated: Boolean get() = artwork != null
+
+@Composable
+internal fun AppearancePageTitle(title: String, modifier: Modifier = Modifier) {
+    val style = AppTheme.appearance
+    if (!style.isIllustrated) {
+        Text(title, modifier = modifier, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        return
+    }
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        AppearanceMotif(style, AppTheme.colors.primary, Modifier.size(18.dp))
+        Text(
+            title,
+            style = AppTheme.typography.titleLarge,
+            color = AppTheme.colors.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
 
 @Composable
 internal fun Modifier.appearanceBackground(): Modifier {

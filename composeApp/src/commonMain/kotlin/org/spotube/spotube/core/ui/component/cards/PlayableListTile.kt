@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
@@ -28,6 +29,7 @@ import org.spotube.spotube.core.ui.component.sharedElementOrNone
 import org.spotube.spotube.core.ui.misc.TextWithShimmer
 import org.spotube.spotube.core.ui.misc.shimmerApply
 import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.resources.iconsax.Iconsax
 import org.spotube.spotube.resources.iconsax.IconsaxAddSquare
 import org.spotube.spotube.resources.iconsax.IconsaxMusic
@@ -67,12 +69,17 @@ fun PlayableListTile(
     compact: Boolean = false
 ) {
     val colors = MillenniumTheme.colors
+    val illustrated = AppTheme.appearance.isIllustrated
     MillenniumListTile(
         modifier = modifier,
         onClick = onClick ?: onPlay,
         selected = isPlaying,
-        background = if (isPlaying) null else millenniumPanelBrush(colors),
-        shape = RoundedCornerShape(8.dp),
+        background = when {
+            isPlaying -> null
+            illustrated -> SolidColor(colors.surface)
+            else -> millenniumPanelBrush(colors)
+        },
+        shape = if (illustrated) AppTheme.shapes.medium else RoundedCornerShape(8.dp),
         borderColor = if (isBlacklisted) colors.danger.copy(alpha = 0.5f) else if (isPlaying) null else colors.border,
         titleForeground = if (isBlacklisted) colors.danger else null,
         borderWidth = 1.dp,

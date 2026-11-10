@@ -32,12 +32,14 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.shape.RoundedCornerShape
 
 import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.core.ui.theming.isIllustrated
 
 import com.composeunstyled.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -96,7 +98,7 @@ internal fun LazyListScope.settingsSectionHeader(title: StringResource) {
         Text(
             text = stringResource(title),
             style = AppTheme.typography.labelMedium,
-            color = Color.Gray,
+            color = if (AppTheme.appearance.isIllustrated) AppTheme.colors.primary else Color.Gray,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
@@ -128,7 +130,7 @@ internal fun SettingsItemIcon(
     tint: Color = AppTheme.colors.primary) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(if (AppTheme.appearance.isIllustrated) AppTheme.shapes.small else RoundedCornerShape(8.dp))
             .background(tint.copy(alpha = 0.12f))) {
         Box(modifier = Modifier.padding(8.dp)) {
             MillenniumIcon(
@@ -196,16 +198,18 @@ internal fun normalizePath(path: String): String {
 internal fun LazyListScope.settingsSectionCard(
     items: List<@Composable () -> Unit>) {
     item {
+        val illustrated = AppTheme.appearance.isIllustrated
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp, vertical = 4.dp)
                 .millenniumSurface(
-                    background = millenniumPanelBrush(MillenniumTheme.colors),
+                    background = if (illustrated) SolidColor(AppTheme.colors.surface)
+                        else millenniumPanelBrush(MillenniumTheme.colors),
                     shape = AppTheme.shapes.medium,
                     borderColor = MillenniumTheme.colors.border,
                     borderWidth = 1.dp,
-                    shadowElevation = 6.dp)
+                    shadowElevation = if (illustrated) 0.dp else 6.dp)
                 .padding(top = 4.dp, bottom = 4.dp)
         ) {
             items.forEachIndexed { index, content ->

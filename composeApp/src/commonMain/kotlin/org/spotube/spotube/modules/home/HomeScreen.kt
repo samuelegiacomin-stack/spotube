@@ -37,7 +37,9 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 
+import org.spotube.spotube.core.ui.theming.AppearancePageTitle
 import org.spotube.spotube.core.ui.theming.appearanceBackground
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.core.ui.theming.AppTheme
 import com.composeunstyled.Text
 import org.spotube.millennium.composables.MillenniumPullToRefreshBox
@@ -85,6 +87,7 @@ import org.spotube.spotube.resources.iconsax.IconsaxMirroringScreen
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import spotube.composeapp.generated.resources.Res
+import spotube.composeapp.generated.resources.welcome_app_name
 import spotube.composeapp.generated.resources.support_button_label
 import spotube.composeapp.generated.resources.devices_title
 import spotube.composeapp.generated.resources.home_title_browse
@@ -140,9 +143,9 @@ fun HomeScreen(viewModel: HomeScreenViewModel) {
         ApplicationMainBar(
             backButton = false,
             title = {
-                if (isSmallScreen) {
+                if (isSmallScreen && !AppTheme.appearance.isIllustrated) {
                     Text(
-                        "Spotube",
+                        stringResource(Res.string.welcome_app_name),
                         style = AppTheme.typography.headlineLarge.copy(
                             fontFamily = FontFamily(
                                 listOf(Font(Res.font.cookie_regular, weight = FontWeight.Normal))
@@ -151,7 +154,9 @@ fun HomeScreen(viewModel: HomeScreenViewModel) {
                         color = AppTheme.colors.onSurface
                     )
                 } else {
-                    Text(stringResource(Res.string.home_title_browse))
+                    AppearancePageTitle(stringResource(
+                        if (isSmallScreen) Res.string.welcome_app_name else Res.string.home_title_browse
+                    ))
                 }
 
             },

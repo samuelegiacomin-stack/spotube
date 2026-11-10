@@ -246,18 +246,26 @@ fun SpotubeTheme(
             )
             AppearanceStyle.TORMENTIL -> AppDefaultTypography.copy(
                 headlineSmall = AppDefaultTypography.headlineSmall.copy(fontFamily = FontFamily.Serif),
+                titleLarge = AppDefaultTypography.titleLarge.copy(fontFamily = FontFamily.Serif),
                 titleMedium = AppDefaultTypography.titleMedium.copy(fontFamily = FontFamily.Serif),
             )
             AppearanceStyle.BLUE_POND, AppearanceStyle.STRAWBERRIES -> AppDefaultTypography.copy(
                 headlineSmall = AppDefaultTypography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                titleLarge = AppDefaultTypography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                 titleMedium = AppDefaultTypography.titleMedium.copy(fontWeight = FontWeight.Bold),
             )
             else -> AppDefaultTypography
         }
     }
 
-    val darkTheme = MillenniumDarkThemeComponents
-    val lightTheme = MillenniumLightThemeComponents
+    val darkTheme = remember(appearance, schemes, shapes) {
+        if (appearance.isIllustrated) MillenniumDarkThemeComponents.illustratedButtons(schemes.dark, shapes.medium)
+        else MillenniumDarkThemeComponents
+    }
+    val lightTheme = remember(appearance, schemes, shapes) {
+        if (appearance.isIllustrated) MillenniumLightThemeComponents.illustratedButtons(schemes.light, shapes.medium)
+        else MillenniumLightThemeComponents
+    }
 
     MillenniumTheme(
         dark = isDarkTheme,

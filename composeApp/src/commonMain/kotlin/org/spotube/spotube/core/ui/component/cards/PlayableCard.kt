@@ -38,6 +38,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 
 import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.core.ui.theming.isIllustrated
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -97,6 +98,7 @@ fun PlayableCard(
         return
     }
     val touchInput = LocalInputModeManager.current.inputMode == InputMode.Touch
+    val coverShape = if (AppTheme.appearance.isIllustrated) AppTheme.shapes.small else RoundedCornerShape(8.dp)
     val sharedTransitionScope = LocalSharedTransitionScope.current
     val animatedVisibilityScope = LocalAnimatedVisibilityScope.current
 
@@ -113,13 +115,13 @@ fun PlayableCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(coverShape)
                         .sharedElementOrNone(
                             key = sharedElementKey,
                             sharedTransitionScope = sharedTransitionScope,
                             animatedVisibilityScope = animatedVisibilityScope
                         ),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = coverShape
                 )
 
                 if (onPlay != null || onAddToQueue != null)
