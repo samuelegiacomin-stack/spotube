@@ -19,8 +19,10 @@ package org.spotube.spotube.core.audioplayer
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -63,6 +65,7 @@ class SingleMediaAudioPlayer(
     // is kept here and handed over with the media.
     private var engineHasMedia = false
     private var pendingStartMs = 0L
+    private var pendingSkip: Job? = null
 
     private val _playerState = MutableStateFlow(PlayerState.IDLE)
     private val _currentMediaItem = MutableStateFlow<MediaItem?>(null)
@@ -140,9 +143,24 @@ class SingleMediaAudioPlayer(
         }
 
         override fun onError(message: String) {
-            if (disposed || token != generation) return
-            _playerState.tryEmit(PlayerState.IDLE)
-            _error.tryEmit(IllegalStateException("VLC playback error: $message"))
+            scope.launch {
+                lock.withLock {
+                    if (disposed || token != generation) return@withLock
+
+                    // Retire the failed load before exposing Idle so Play creates new native media.
+                    generation++
+                    engineHasMedia = false
+                    pendingStartMs = _position.value.inWholeMilliseconds
+                    _bufferingPosition.value = Duration.ZERO
+                    mediaSession.update(
+                        _currentMediaItem.value,
+                        pendingStartMs / 1000.0,
+                        _duration.value.inWholeMilliseconds / 1000.0,
+                        false)
+                    _playerState.value = PlayerState.IDLE
+                    _error.tryEmit(IllegalStateException("VLC playback error: $message"))
+                }
+            }
         }
     }
 
@@ -158,6 +176,7 @@ class SingleMediaAudioPlayer(
 
     /** Loads [currentPlaylist] at [currentIndex] into the engine. Caller holds [lock]. */
     private fun loadCurrentIntoEngineLocked(autoPlay: Boolean) {
+        cancelPendingSkipLocked()
         val item = currentPlaylist.getOrNull(currentIndex) ?: return
         generation++
         completionHandled = false
@@ -179,6 +198,39 @@ class SingleMediaAudioPlayer(
         _currentMediaItem.tryEmit(currentPlaylist[index])
         pendingStartMs = 0L
         loadCurrentIntoEngineLocked(autoPlay = true)
+    }
+
+    private fun cancelPendingSkipLocked() {
+        pendingSkip?.cancel()
+        pendingSkip = null
+    }
+
+    /** Count each tap immediately and open only the last track of a fast sequence. */
+    private fun skipToIndexLocked(index: Int) {
+        if (pendingSkip == null) {
+            generation++
+            engineHasMedia = false
+            engine.stop()
+        }
+        currentIndex = index
+        val item = currentPlaylist[index]
+        pendingStartMs = 0L
+        _position.value = Duration.ZERO
+        _bufferingPosition.value = Duration.ZERO
+        _duration.value = item.duration
+        _currentMediaItem.value = item
+        _playerState.value = PlayerState.BUFFERING
+        mediaSession.update(item, 0.0, item.duration.inWholeMilliseconds / 1000.0, false)
+
+        cancelPendingSkipLocked()
+        pendingSkip = scope.launch {
+            delay(120)
+            lock.withLock {
+                if (disposed || pendingSkip != coroutineContext[Job]) return@withLock
+                pendingSkip = null
+                loadCurrentIntoEngineLocked(autoPlay = true)
+            }
+        }
     }
 
     private fun onMediaEndedLocked() {
@@ -210,7 +262,8 @@ class SingleMediaAudioPlayer(
     override suspend fun pause() {
         lock.withLock {
             if (disposed) return
-            if (_playerState.value == PlayerState.COMPLETED) {
+            if (pendingSkip != null || _playerState.value == PlayerState.COMPLETED) {
+                cancelPendingSkipLocked()
                 _playerState.tryEmit(PlayerState.PAUSED)
                 return
             }
@@ -221,6 +274,7 @@ class SingleMediaAudioPlayer(
     override suspend fun stop() {
         lock.withLock {
             if (disposed) return
+            cancelPendingSkipLocked()
             generation++
             engine.stop()
             mediaSession.deactivate()
@@ -264,7 +318,11 @@ class SingleMediaAudioPlayer(
             val currentItem = _currentMediaItem.value
             val rebuilt = if (enabled) {
                 if (currentItem != null) {
-                    listOf(currentItem) + originalPlaylist.filterNot { it.url == currentItem.url }.shuffled()
+                    val remaining = originalPlaylist.toMutableList()
+                    val index = remaining.indexOfFirst { it === currentItem }.takeIf { it >= 0 }
+                        ?: remaining.indexOfFirst { it.url == currentItem.url }
+                    if (index >= 0) remaining.removeAt(index)
+                    listOf(currentItem) + remaining.shuffled()
                 } else {
                     originalPlaylist.shuffled()
                 }
@@ -279,7 +337,8 @@ class SingleMediaAudioPlayer(
             _playlist.tryEmit(currentPlaylist.toList())
 
             currentIndex = if (currentItem == null) 0 else {
-                currentPlaylist.indexOfFirst { it.url == currentItem.url }.takeIf { it >= 0 } ?: 0
+                currentPlaylist.indexOfFirst { it === currentItem }.takeIf { it >= 0 }
+                    ?: currentPlaylist.indexOfFirst { it.url == currentItem.url }.coerceAtLeast(0)
             }
             _currentMediaItem.tryEmit(currentPlaylist.getOrNull(currentIndex))
         }
@@ -323,6 +382,7 @@ class SingleMediaAudioPlayer(
         lock.withLock {
             if (disposed) return
 
+            cancelPendingSkipLocked()
             originalPlaylist.clear()
             generation++
             originalPlaylist.addAll(playlist)
@@ -411,7 +471,10 @@ class SingleMediaAudioPlayer(
             originalPlaylist.removeAll { it.url == mediaItem.url }
             val currentUrl = _currentMediaItem.value?.url
             val removedCurrent = currentUrl == mediaItem.url
-            if (removedCurrent) generation++
+            if (removedCurrent) {
+                cancelPendingSkipLocked()
+                generation++
+            }
             val removalIndices = currentPlaylist.withIndex()
                 .filter { it.value.url == mediaItem.url }
                 .map { it.index }
@@ -466,7 +529,7 @@ class SingleMediaAudioPlayer(
     override suspend fun skipToNext() {
         lock.withLock {
             if (disposed || currentPlaylist.isEmpty()) return
-            playIndexLocked((currentIndex + 1).coerceAtMost(currentPlaylist.lastIndex))
+            skipToIndexLocked((currentIndex + 1).coerceAtMost(currentPlaylist.lastIndex))
         }
     }
 
@@ -482,7 +545,7 @@ class SingleMediaAudioPlayer(
     override suspend fun skipToPrevious() {
         lock.withLock {
             if (disposed || currentPlaylist.isEmpty()) return
-            playIndexLocked((currentIndex - 1).coerceAtLeast(0))
+            skipToIndexLocked((currentIndex - 1).coerceAtLeast(0))
         }
     }
 

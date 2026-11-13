@@ -12,9 +12,11 @@ class SingleMediaAudioPlayerTest {
         var callback: NativePlayerListener? = null
         val loads = mutableListOf<String>()
         var lastSeekMs = -1L
+        var lastLoadPositionMs = -1L
         override fun setListener(listener: NativePlayerListener?) { callback = listener }
         override fun load(url: String, autoPlay: Boolean, startPositionMs: Long) {
             loads += url
+            lastLoadPositionMs = startPositionMs
             if (autoPlay) callback?.onState(NativePlayerState.PLAYING)
         }
         override fun play() { callback?.onState(NativePlayerState.PLAYING) }
@@ -50,6 +52,7 @@ class SingleMediaAudioPlayerTest {
         assertEquals(4_000L, player.positionFlow.value.inWholeMilliseconds)
         assertEquals(PlayerState.PLAYING, player.playerStateFlow.value)
         player.skipToNext()
+        awaitCondition { player.playerStateFlow.value == PlayerState.PLAYING }
         assertEquals(listOf("b", "c"), engine.loads)
     }
     @Test fun obsoleteExpansionCannotReplaceAnEditedQueueOrLosePausedState() = scenario { player, engine ->
@@ -107,6 +110,49 @@ class SingleMediaAudioPlayerTest {
         assertEquals(PlayerState.PLAYING, player.playerStateFlow.value)
         assertEquals(0L, player.positionFlow.value.inWholeMilliseconds)
     }
+    @Test fun playAfterNativeErrorReloadsTheCurrentTrackAtItsLastPosition() = scenario { player, engine ->
+        player.load(listOf(item("a"), item("b")), true, 0)
+        player.skipToNext()
+        awaitCondition { player.playerStateFlow.value == PlayerState.PLAYING }
+        engine.callback!!.onTime(3_000)
+        val failed = engine.callback!!
+        failed.onError("Could not open stream")
+        awaitCondition { player.playerStateFlow.value == PlayerState.IDLE }
+
+        failed.onState(NativePlayerState.PLAYING)
+        assertEquals(PlayerState.IDLE, player.playerStateFlow.value)
+        player.play()
+
+        assertEquals(listOf("a", "b", "b"), engine.loads)
+        assertEquals(3_000L, engine.lastLoadPositionMs)
+        assertEquals("b", player.currentMediaItemFlow.value?.url)
+        assertEquals(PlayerState.PLAYING, player.playerStateFlow.value)
+    }
+
+    @Test fun fastSkipsCountEachTapAndOnlyOpenTheFinalTrack() = scenario { player, engine ->
+        val items = listOf("a", "a", "b", "c", "d").map(::item)
+        player.load(items, true, 0)
+        player.shuffle(true)
+        assertEquals(2, player.playlistFlow.value.count { it.url == "a" })
+        player.shuffle(false)
+        repeat(3) { player.skipToNext() }
+
+        assertEquals("c", player.currentMediaItemFlow.value?.url)
+        awaitCondition { player.playerStateFlow.value == PlayerState.PLAYING }
+        assertEquals(listOf("a", "c"), engine.loads)
+    }
+
+    @Test fun pausingAQueuedSkipDoesNotRestartPlaybackLater() = scenario { player, engine ->
+        player.load(listOf(item("a"), item("b")), true, 0)
+        player.skipToNext()
+        player.pause()
+        delay(250)
+        assertEquals(PlayerState.PAUSED, player.playerStateFlow.value)
+        assertEquals(listOf("a"), engine.loads)
+        player.play()
+        assertEquals(listOf("a", "b"), engine.loads)
+    }
+
     @Test fun oldCompletionDoesNotOverrideManualSelection() = scenario { player, engine ->
         player.load(listOf(item("a"), item("b"), item("c")), true, 0)
         val retired = engine.callback!!

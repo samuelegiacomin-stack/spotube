@@ -335,7 +335,7 @@ internal class StreamProxy(
                             return@execute
                         }
                     }
-                    respondWithUpstream(call, response, trackId, requestMethod, cacheTicket)
+                    respondWithUpstream(call, response, trackId, requestMethod, currentCacheTicket)
                 }
             }.exceptionOrNull()
 
@@ -345,6 +345,7 @@ internal class StreamProxy(
                     logger.i(failure) { "[Req] player closed the connection while streaming track $trackId" }
                     return
                 }
+                streamingUrlRepository.invalidateCachedStreamUrl(trackId, currentUrl)
                 logger.w(failure) { "Failed to fetch upstream stream for track $trackId" }
                 // Throws if the response already started streaming; nothing more to send then
                 runCatching { call.respond(HttpStatusCode.BadGateway, "Failed to fetch upstream stream") }

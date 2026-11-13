@@ -197,7 +197,7 @@ fun AppLargePlayer(
 
     fun onShuffleToggle() {
         if (isJamGuest) return
-        scope.launch { audioPlayer.shuffle(!playerUiState.isShuffling) }
+        scope.launch { audioPlayer.shuffle(!audioPlayer.shuffleModeFlow.value) }
     }
 
     fun onLoopToggle() {

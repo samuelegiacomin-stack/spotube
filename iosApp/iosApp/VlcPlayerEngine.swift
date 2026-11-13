@@ -45,7 +45,7 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
     private var volumePercent: Int32 = 100
     private var lastReportedDurationMs: Int64 = 0
     private var lastReportedState: NativePlayerState?
-    private var didReportEnd = false
+    private var didFinishMedia = false
 
     override init() {
         super.init()
@@ -72,7 +72,7 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
             self.player.delegate = self
             self.listener = self.pendingListener
             self.lastReportedState = nil
-            self.didReportEnd = false
+            self.didFinishMedia = false
             let mediaUrl: URL
             if url.hasPrefix("/") {
                 // LocalMediaTrack stores a filesystem path. URL(string:) makes a relative URL
@@ -167,7 +167,7 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
         let state = source.state
         let playing = source.isPlaying
         onMain {
-            guard !self.released, !self.didReportEnd, source === self.player else { return }
+            guard !self.released, !self.didFinishMedia, source === self.player else { return }
             switch state {
             case .opening:
                 self.report(.opening)
@@ -183,8 +183,9 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
             case .stopped:
                 self.report(.idle)
             case .error:
+                // Ignore late state and time events from this failed media until the next load.
+                self.didFinishMedia = true
                 self.listener?.onError(message: "VLC could not play this media")
-                self.report(.idle)
             default:
                 break
             }
@@ -194,7 +195,7 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
     func mediaPlayerTimeChanged(_ aNotification: Notification) {
         guard let source = aNotification.object as? VLCMediaPlayer else { return }
         onMain {
-            guard !self.released, !self.didReportEnd, source === self.player else { return }
+            guard !self.released, !self.didFinishMedia, source === self.player else { return }
             // Time only advances while playing, whatever the last state notification said.
             if self.player.isPlaying { self.report(.playing) }
             self.reportDuration()
@@ -226,8 +227,8 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
     /// Sends [state] to Kotlin unless it was the last one sent.
     private func report(_ state: NativePlayerState) {
         if state == .ended {
-            guard !didReportEnd else { return }
-            didReportEnd = true
+            guard !didFinishMedia else { return }
+            didFinishMedia = true
         }
         guard state != lastReportedState else { return }
         lastReportedState = state

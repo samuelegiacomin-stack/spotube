@@ -22,6 +22,10 @@ import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.di.injectLogger
 import org.spotube.spotube.core.remote.RemoteControlHandler
 import org.spotube.spotube.modules.settings.SettingsViewModel
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
+import io.ktor.client.plugins.HttpRequestRetry
+import io.ktor.client.plugins.HttpRequestTimeoutException
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.http.HttpMethod
 import io.ktor.server.application.Application
@@ -65,6 +69,17 @@ class LocalServer(
 
     val logger by injectLogger<LocalServer>()
     private val httpClient = httpClientFactory.create {
+        // Retry once if opening an upstream audio response times out. Once headers have
+        // arrived, the proxy owns the body and may already have sent bytes to the player.
+        install(HttpRequestRetry) {
+            retryIf { _, _ -> false }
+            retryOnExceptionIf(maxRetries = 1) { request, error ->
+                (request.method == HttpMethod.Get || request.method == HttpMethod.Head) &&
+                    (error is SocketTimeoutException || error is ConnectTimeoutException ||
+                        error is HttpRequestTimeoutException)
+            }
+            delayMillis { 250L }
+        }
         // A stalled upstream connection must not wedge an engine thread
         // forever. Only the connect phase is bounded — the proxy streams long
         // audio bodies, so request/socket timeouts would cut playback short.
