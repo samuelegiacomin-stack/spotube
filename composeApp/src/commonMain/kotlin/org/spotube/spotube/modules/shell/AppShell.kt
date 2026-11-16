@@ -60,6 +60,9 @@ import com.composeunstyled.rememberBottomSheetState
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
 import org.spotube.spotube.core.ui.theming.appearanceBackground
+import org.spotube.spotube.core.ui.theming.AppTheme
+import org.spotube.spotube.PlatformType
+import org.spotube.spotube.getPlatform
 import org.spotube.spotube.core.navigation.NavigationCommands
 import org.spotube.spotube.core.navigation.NavigationState
 import org.spotube.spotube.core.navigation.Navigator
@@ -322,6 +325,8 @@ internal fun CompactPlayerOverlay(
     bottomBar: @Composable (Modifier) -> Unit = {
         AppBottombar(navigator = navigator, navigationState = navigationState, modifier = it)
     },
+    illustratedArt: IllustratedPlayerArt? =
+        if (getPlatform().type == PlatformType.IOS) AppTheme.appearance.illustratedPlayerArt() else null,
     content: @Composable () -> Unit
 ) {
     val density = LocalDensity.current
@@ -374,6 +379,13 @@ internal fun CompactPlayerOverlay(
     val floatingPlayerVisible by remember(sheetState) {
         derivedStateOf { viewModel.compactSheetUiState(progress).floatingPlayerAlpha > 0.01f }
     }
+    val illustratedMotion = remember(illustratedArt, sheetState) {
+        illustratedArt?.let { art ->
+            IllustratedPlayerMotion(art, progress = { progress }) {
+                sheetState.isIdle && sheetState.currentDetent == SheetDetent.FullyExpanded
+            }
+        }
+    }
     // Once shown, keep the expanded player composed: composing it (view models, lyrics, cover
     // art) on the first drag frame of every gesture is the hitch the user feels as lag.
     var expandedPlayerComposed by remember { mutableStateOf(false) }
@@ -382,49 +394,54 @@ internal fun CompactPlayerOverlay(
     Box(modifier = Modifier.fillMaxSize()) {
         content()
 
-        UnstyledBottomSheet(
-            state = sheetState,
-            modifier = Modifier.fillMaxSize()
-        ) {
-            Sheet(modifier = Modifier.fillMaxSize()) {
-                Box(modifier = Modifier.fillMaxSize()) {
-                    if (expandedPlayerComposed) {
-                        expandedPlayer(
-                            Modifier
-                                .fillMaxSize()
-                                .graphicsLayer {
-                                    alpha = viewModel.compactSheetUiState(progress).expandedPlayerAlpha
-                                },
-                            { scope.launch { sheetState.animateTo(partialDetent) } }
-                        )
-                    }
+        CompositionLocalProvider(LocalIllustratedPlayer provides illustratedMotion) {
+            UnstyledBottomSheet(
+                state = sheetState,
+                modifier = Modifier.fillMaxSize()
+            ) {
+                Sheet(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        if (expandedPlayerComposed) {
+                            expandedPlayer(
+                                Modifier
+                                    .fillMaxSize()
+                                    .graphicsLayer {
+                                        alpha = viewModel.compactSheetUiState(progress).expandedPlayerAlpha
+                                    },
+                                { scope.launch { sheetState.animateTo(partialDetent) } }
+                            )
+                        }
 
-                    // Always composed: building it (view model, cover art, player state) only once
-                    // progress drops below the fade-out point stalls the collapse mid-drag.
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        floatingPlayer(
-                            Modifier
-                                .zeroSizeUnless(floatingPlayerVisible)
-                                .graphicsLayer {
-                                    alpha = viewModel.floatingPlayerAlpha(progress)
-                                },
-                            { scope.launch { sheetState.animateTo(SheetDetent.FullyExpanded) } })
+                        // Always composed: building it (view model, cover art, player state) only once
+                        // progress drops below the fade-out point stalls the collapse mid-drag.
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            floatingPlayer(
+                                Modifier
+                                    .zeroSizeUnless(floatingPlayerVisible)
+                                    .graphicsLayer {
+                                        alpha = viewModel.floatingPlayerAlpha(progress)
+                                    },
+                                { scope.launch { sheetState.animateTo(SheetDetent.FullyExpanded) } })
+                        }
+                        if (illustratedMotion != null) {
+                            IllustratedPlayerOverlay(illustratedMotion, Modifier.matchParentSize())
+                        }
                     }
                 }
             }
-        }
 
-        bottomBar(
-            Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .zeroSizeUnless(floatingPlayerVisible)
-                .onSizeChanged { size ->
-                    viewModel.onBottomBarMeasured(with(density) { size.height.toDp() })
-                }
-                .graphicsLayer {
-                    alpha = viewModel.floatingPlayerAlpha(progress)
-                })
+            bottomBar(
+                Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .zeroSizeUnless(floatingPlayerVisible)
+                    .onSizeChanged { size ->
+                        viewModel.onBottomBarMeasured(with(density) { size.height.toDp() })
+                    }
+                    .graphicsLayer {
+                        alpha = viewModel.floatingPlayerAlpha(progress)
+                    })
+        }
     }
 }
 

@@ -142,21 +142,27 @@ internal fun FloatingPlayerContent(
 ) {
     val coverModel = playerUiState.coverModel
     val appearance = AppTheme.appearance
+    val illustratedMotion = LocalIllustratedPlayer.current
     val panel = when (appearance) {
         AppearanceStyle.CLASSIC, AppearanceStyle.GLASS -> millenniumPanelBrush(MillenniumTheme.colors)
         else -> SolidColor(MillenniumTheme.colors.surface)
     }
 
+    val surface = if (illustratedMotion != null) {
+        Modifier.background(MillenniumTheme.colors.surface)
+    } else {
+        Modifier.millenniumSurface(
+            background = panel,
+            shape = AppTheme.shapes.panelTop,
+            borderColor = MillenniumTheme.colors.border,
+            borderWidth = 1.dp,
+        )
+    }
     Box(
         modifier = modifier
             .fillMaxWidth()
             .height(FloatingPlayerContentHeight + FloatingPlayerBottomBleed)
-            .millenniumSurface(
-                background = panel,
-                shape = AppTheme.shapes.panelTop,
-                borderColor = MillenniumTheme.colors.border,
-                borderWidth = 1.dp,
-            )
+            .then(surface)
     ) {
         Column(
             modifier = Modifier
@@ -220,8 +226,12 @@ internal fun FloatingPlayerContent(
                     }
                 }
 
+                if (illustratedMotion != null) {
+                    IllustratedPlayerPeek(illustratedMotion)
+                    Spacer(Modifier.weight(.43f))
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (appearance.isIllustrated) {
+                    if (illustratedMotion == null && appearance.isIllustrated) {
                         AppearanceMotif(
                             appearance, AppTheme.colors.primary,
                             Modifier.padding(horizontal = 6.dp).size(16.dp),

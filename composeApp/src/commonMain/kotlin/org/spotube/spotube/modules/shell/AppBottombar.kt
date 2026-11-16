@@ -23,9 +23,14 @@ import org.spotube.millennium.composables.MillenniumBottomNavigationBar
 import org.spotube.millennium.composables.MillenniumBottomNavigationItem
 import org.spotube.millennium.composables.MillenniumIcon
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.unit.dp
 import org.spotube.spotube.core.ui.theming.isIllustrated
 import org.spotube.spotube.NavigationItem
@@ -37,6 +42,7 @@ import org.spotube.spotube.core.navigation.Routes
 import org.spotube.spotube.modules.downloads.DownloadBadgeIndicator
 import org.spotube.spotube.core.ui.theming.AppTheme
 import org.spotube.spotube.modules.settings.AppearanceStyle
+import org.spotube.millennium.theme.MillenniumTheme
 
 @Composable
 fun AppBottombar(
@@ -45,10 +51,7 @@ fun AppBottombar(
     modifier: Modifier = Modifier,
     libraryBadge: @Composable () -> Unit = { DownloadBadgeIndicator() }
 ) {
-    val dockModifier = if (AppTheme.appearance == AppearanceStyle.GLASS || AppTheme.appearance.isIllustrated) {
-        modifier.padding(horizontal = 10.dp).clip(AppTheme.shapes.large)
-    } else modifier
-    MillenniumBottomNavigationBar(modifier = dockModifier) {
+    val tabs: @Composable RowScope.() -> Unit = {
         bottombarTabs.filterIsInstance<NavigationItem.Tab<*>>()
             .forEach { tab ->
                 val selected = navigationState.topLevelRoute == tab.route
@@ -72,5 +75,22 @@ fun AppBottombar(
                     }
                 )
             }
+    }
+    if (LocalIllustratedPlayer.current != null) {
+        val surface = MillenniumTheme.colors.surface
+        MillenniumBottomNavigationBar(
+            modifier = modifier.background(surface),
+            background = SolidColor(surface),
+            shape = RectangleShape,
+            borderWidth = 0.dp,
+            shadowElevation = 0.dp,
+            innerGlowColor = Color.Transparent,
+            content = tabs,
+        )
+    } else {
+        val dockModifier = if (AppTheme.appearance == AppearanceStyle.GLASS || AppTheme.appearance.isIllustrated) {
+            modifier.padding(horizontal = 10.dp).clip(AppTheme.shapes.large)
+        } else modifier
+        MillenniumBottomNavigationBar(modifier = dockModifier, content = tabs)
     }
 }

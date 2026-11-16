@@ -1,0 +1,183 @@
+/*
+ * Copyright (C) 2026 Kingkor Roy Tirtho and Spotube Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+
+package org.spotube.spotube.modules.shell
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.ui.ExperimentalComposeUiApi
+import androidx.compose.ui.ImageComposeScene
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.PointerType
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.use
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import org.spotube.spotube.core.navigation.Navigator
+import org.spotube.spotube.core.navigation.Routes
+import org.spotube.spotube.core.navigation.TOP_LEVEL_ROUTES
+import org.spotube.spotube.core.navigation.rememberNavigationState
+import org.spotube.spotube.core.ui.theming.SpotubeTheme
+import org.spotube.spotube.modules.settings.AppearanceStyle
+import org.spotube.spotube.modules.settings.Theme
+import org.spotube.spotube.modules.settings.UserSettings
+import java.awt.image.BufferedImage
+import java.io.ByteArrayInputStream
+import java.io.File
+import javax.imageio.ImageIO
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+@OptIn(ExperimentalComposeUiApi::class)
+class IllustratedPlayerTest {
+    @Test
+    fun illustratedThemesCoverTheDockAndRenderTheDragAndRestPoses() {
+        val output = File("build/reports/animated-player").apply { mkdirs() }
+        val cases = listOf(
+            Triple(AppearanceStyle.TORMENTIL, Theme.DARK, 390),
+            Triple(AppearanceStyle.BLUE_POND, Theme.DARK, 320),
+            Triple(AppearanceStyle.STRAWBERRIES, Theme.LIGHT, 390),
+        )
+        val height = 844
+        for ((style, theme, width) in cases) {
+            val art = assertNotNull(style.illustratedPlayerArt())
+            val lifecycleOwner = object : LifecycleOwner {
+                override val lifecycle = LifecycleRegistry.createUnsafe(this).apply {
+                    currentState = Lifecycle.State.RESUMED
+                }
+            }
+            val background = mutableStateOf(Color(0xFFFF00FF))
+            ImageComposeScene(width, height) {
+                CompositionLocalProvider(LocalLifecycleOwner provides lifecycleOwner) {
+                    SpotubeTheme(UserSettings(theme = theme, appearanceStyle = style)) {
+                        val navigation = rememberNavigationState(Routes.Home, TOP_LEVEL_ROUTES)
+                        val navigator = remember(navigation) { Navigator(navigation) }
+                        CompactPlayerOverlay(
+                            navigator = navigator,
+                            navigationState = navigation,
+                            viewModel = remember { AppShellViewModel() },
+                            onQueue = {}, onAlternativeSource = {}, onExpandLyrics = {},
+                            illustratedArt = art,
+                            floatingPlayer = { modifier, expand ->
+                                FloatingPlayerContent(
+                                    playerUiState = PlayerUiState(),
+                                    modifier = modifier,
+                                    onPlayPause = {},
+                                    onExpand = expand,
+                                    heartButton = {},
+                                )
+                            },
+                            expandedPlayer = { modifier, _ ->
+                                Column(modifier.fillMaxSize().background(Color.DarkGray)) {
+                                    Spacer(Modifier.fillMaxWidth().height(650.dp))
+                                    IllustratedPlayerScene(assertNotNull(LocalIllustratedPlayer.current), 194.dp)
+                                }
+                            },
+                            bottomBar = { modifier ->
+                                AppBottombar(navigator, navigation, modifier, libraryBadge = {})
+                            },
+                        ) { Box(Modifier.fillMaxSize().background(background.value)) }
+                    }
+                }
+            }.use { scene ->
+                var time = 0L
+                fun step(count: Int) = repeat(count) {
+                    scene.render(time).close()
+                    time += 16_000_000L
+                }
+                fun screenshot(label: String): BufferedImage {
+                    val png = scene.render(time).use { image ->
+                        assertNotNull(image.encodeToData()).use { it.bytes }
+                    }
+                    output.resolve("${style.name.lowercase()}-${label}.png").writeBytes(png)
+                    return ImageIO.read(ByteArrayInputStream(png))
+                }
+                step(15)
+                val dock = screenshot("dock")
+                val firstPageColor = background.value.toArgb()
+                assertNoPageAtLowerEdges(dock, firstPageColor, label = style.name)
+                assertEquals(dock.getRGB(0, height - 100), dock.getRGB(0, height - 2),
+                    "${style.name} should use the same surface at the edges of both rows")
+                background.value = Color.Cyan
+                step(8)
+                val differentPage = screenshot("dock-second-background")
+                assertEquals(Color.Cyan.toArgb(), differentPage.getRGB(5, 20))
+                for (y in height - 105 until height) {
+                    for (x in listOf(0, width - 1)) {
+                        assertEquals(dock.getRGB(x, y), differentPage.getRGB(x, y),
+                            "${style.name} dock edge should be opaque at (${x}, ${y})")
+                    }
+                }
+
+                val start = Offset(width / 2f, height - 104f)
+                fun pointer(type: PointerEventType, pos: Offset) =
+                    scene.sendPointerEvent(type, pos, type = PointerType.Touch, timeMillis = time / 1_000_000L)
+                pointer(PointerEventType.Press, start)
+                step(3)
+                pointer(PointerEventType.Move, start.copy(y = start.y - 24f))
+                step(3)
+                pointer(PointerEventType.Move, start.copy(y = start.y - 300f))
+                step(4)
+                val hanging = screenshot("hang")
+                assertEquals(background.value.toArgb(), hanging.getRGB(5, 20),
+                    "${style.name} should still be partway open")
+
+                pointer(PointerEventType.Move, start.copy(y = 50f))
+                step(8)
+                pointer(PointerEventType.Release, start.copy(y = 50f))
+                step(130)
+                val resting = screenshot("rest")
+                assertEquals(Color.DarkGray.toArgb(), resting.getRGB(5, 20), "${style.name} should be open")
+                assertTrue(resting.getRGB(2, height - 2) != Color.DarkGray.toArgb(), "scene should reach bottom-left")
+                assertTrue(resting.getRGB(width - 3, height - 2) != Color.DarkGray.toArgb(), "scene should reach bottom-right")
+
+                pointer(PointerEventType.Press, Offset(width / 2f, 45f))
+                step(3)
+                pointer(PointerEventType.Move, Offset(width / 2f, height - 110f))
+                step(6)
+                pointer(PointerEventType.Release, Offset(width / 2f, height - 110f))
+                step(110)
+                assertNoPageAtLowerEdges(screenshot("collapsed"), background.value.toArgb(), label = style.name)
+            }
+        }
+    }
+
+    private fun assertNoPageAtLowerEdges(image: BufferedImage, pageColor: Int, label: String) {
+        for (y in image.height - 105 until image.height) {
+            for (x in listOf(0, 1, image.width - 2, image.width - 1)) {
+                assertTrue(image.getRGB(x, y) != pageColor, "${label} exposed the page at (${x}, ${y})")
+            }
+        }
+    }
+}
