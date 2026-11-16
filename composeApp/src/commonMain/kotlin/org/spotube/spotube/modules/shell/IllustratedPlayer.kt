@@ -132,9 +132,9 @@ internal fun AppearanceStyle.illustratedPlayerArt(): IllustratedPlayerArt? = whe
 internal class IllustratedPlayerMotion(
     val art: IllustratedPlayerArt,
     val progress: () -> Float,
-    val sheetOffset: () -> Float,
     val expanded: () -> Boolean,
 ) {
+    var sheetTopInRoot by mutableStateOf(Float.NaN)
     var sceneBounds by mutableStateOf(Rect.Zero)
     var peekBounds by mutableStateOf(Rect.Zero)
 }
@@ -283,25 +283,25 @@ internal fun IllustratedPlayerOverlay(
         val pull = motion.progress()
         val lift = (pull / .045f).coerceIn(0f, 1f)
         val peekBounds = motion.peekBounds
-        if (peekBounds.width <= 0f) return@Canvas
+        if (peekBounds.width <= 0f || viewport.height <= 0f) return@Canvas
         val gripX = peekBounds.center.x - viewport.left
-        val gripOffset = (-7).dp.toPx()
-        val sheetY = motion.sheetOffset().takeIf { it.isFinite() } ?: 0f
-        val gripY = (sheetY + gripOffset).coerceAtLeast(0f)
+        // The sheet state exposes the revealed height. The visible edge and this canvas
+        // are both measured in root coordinates so the mascot follows the rendered sheet.
+        val gripY = motion.sheetTopInRoot - viewport.top - 7.dp.toPx()
         val hangingHeight = art.hangingHeight.toPx()
         if (!expanded) {
             val peekBottom = if (isFox) size.height - dockHeightPx + 8.dp.toPx()
                 else peekBounds.bottom - viewport.top + 3.dp.toPx()
             val peekHeight = minOf(peekBounds.height, peekBounds.width / peek.aspectRatio)
             paintPose(peek, gripX, peekBottom, peekHeight, 1f - lift)
-            if (lift > 0f && !reduceMotion) {
+            if (lift > 0f && !reduceMotion && gripY.isFinite()) {
                 val descent = peekHeight + (hangingHeight - peekHeight) * lift
                 paintPose(hanging, gripX, gripY + descent, descent, lift)
             }
             return@Canvas
         }
         val scene = motion.sceneBounds
-        if (scene.height <= 0f) return@Canvas
+        if (scene.height <= 0f || !gripY.isFinite()) return@Canvas
         val restX = scene.left - viewport.left + scene.width * art.landingX
         val groundY = scene.top - viewport.top + scene.height * art.landingY
         val restWidth = scene.width.coerceAtMost(520.dp.toPx()) * art.restWidthFraction

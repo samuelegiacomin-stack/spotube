@@ -48,6 +48,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
@@ -381,7 +383,7 @@ internal fun CompactPlayerOverlay(
     }
     val illustratedMotion = remember(illustratedArt, sheetState) {
         illustratedArt?.let { art ->
-            IllustratedPlayerMotion(art, progress = { progress }, sheetOffset = { sheetState.offset }) {
+            IllustratedPlayerMotion(art, progress = { progress }) {
                 sheetState.isIdle && sheetState.currentDetent == SheetDetent.FullyExpanded
             }
         }
@@ -400,7 +402,12 @@ internal fun CompactPlayerOverlay(
                 modifier = Modifier.fillMaxSize()
             ) {
                 Sheet(modifier = Modifier.fillMaxSize()) {
-                    Box(modifier = Modifier.fillMaxSize()) {
+                    val sheetContentModifier = Modifier.fillMaxSize()
+                    Box(modifier = if (illustratedMotion == null) sheetContentModifier else {
+                        sheetContentModifier.onGloballyPositioned {
+                            illustratedMotion.sheetTopInRoot = it.positionInRoot().y
+                        }
+                    }) {
                         if (expandedPlayerComposed) {
                             expandedPlayer(
                                 Modifier

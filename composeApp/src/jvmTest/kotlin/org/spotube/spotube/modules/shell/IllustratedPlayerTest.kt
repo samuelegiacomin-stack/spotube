@@ -164,20 +164,33 @@ class IllustratedPlayerTest {
                 step(3)
                 pointer(PointerEventType.Move, start.copy(y = start.y - 24f))
                 step(3)
-                pointer(PointerEventType.Move, start.copy(y = start.y - 300f))
-                step(4)
-                val hanging = screenshot("hang")
-                assertEquals(background.value.toArgb(), hanging.getRGB(5, 20),
-                    "${style.name} should still be partway open")
-                run {
-                    val sheetTop = motion.sheetOffset().toInt()
-                    val gripX = motion.peekBounds.center.x.toInt()
-                    assertTrue(gripX >= width * .57f, "The mascot's resting anchor should be on the right")
+                val gripX = motion.peekBounds.center.x.toInt()
+                assertTrue(gripX >= width * .57f, "The mascot's resting anchor should be on the right")
+                fun verifyGrabAt(pull: Float, label: String): Int {
+                    pointer(PointerEventType.Move, start.copy(y = start.y - pull))
+                    step(4)
+                    val hanging = screenshot(label)
+                    val pageColor = background.value.toArgb()
+                    // Find the actual visible edge in the render, outside the mascot's lane.
+                    val sheetTop = assertNotNull((20 until height - 105).firstOrNull { y ->
+                        hanging.getRGB(5, y) != pageColor
+                    })
+                    assertTrue(sheetTop in 40 until height - 110,
+                        "${style.name} should still be partway open at $label")
                     val showsPaws = (sheetTop - 6 until sheetTop - 1).any { y ->
-                        (gripX - 18..gripX + 18).any { x -> hanging.getRGB(x, y) != background.value.toArgb() }
+                        (gripX - 18..gripX + 18).any { x -> hanging.getRGB(x, y) != pageColor }
                     }
-                    assertTrue(showsPaws, "The mascot should grab the sheet at its resting horizontal anchor")
+                    assertTrue(showsPaws, "${style.name} should grab the visible sheet edge at y=$sheetTop ($label)")
+                    return sheetTop
                 }
+                val firstGrip = verifyGrabAt(120f, "hang-low")
+                val middleGrip = verifyGrabAt(300f, "hang")
+                val highGrip = verifyGrabAt(465f, "hang-high")
+                val returningGrip = verifyGrabAt(310f, "hang-reversed")
+                assertTrue(firstGrip > middleGrip && middleGrip > highGrip,
+                    "${style.name} should climb with the sheet")
+                assertTrue(returningGrip > highGrip && abs(middleGrip - returningGrip) < 20,
+                    "${style.name} should stay attached when the drag reverses")
 
                 pointer(PointerEventType.Move, start.copy(y = 50f))
                 step(8)
@@ -238,7 +251,7 @@ class IllustratedPlayerTest {
         )
         for ((style, theme) in themes) {
             val motion = IllustratedPlayerMotion(assertNotNull(style.illustratedPlayerArt()),
-                progress = { 1f }, sheetOffset = { 0f }, expanded = { true })
+                progress = { 1f }, expanded = { true })
             var background = 0
             ImageComposeScene(sampleWidth, 418) {
                 SpotubeTheme(UserSettings(theme = theme, appearanceStyle = style)) {
