@@ -58,6 +58,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlin.math.abs
 
 @OptIn(ExperimentalComposeUiApi::class)
 class IllustratedPlayerTest {
@@ -72,6 +73,8 @@ class IllustratedPlayerTest {
         val height = 844
         for ((style, theme, width) in cases) {
             val art = assertNotNull(style.illustratedPlayerArt())
+            val viewModel = AppShellViewModel()
+            var illustratedMotion: IllustratedPlayerMotion? = null
             val lifecycleOwner = object : LifecycleOwner {
                 override val lifecycle = LifecycleRegistry.createUnsafe(this).apply {
                     currentState = Lifecycle.State.RESUMED
@@ -86,10 +89,11 @@ class IllustratedPlayerTest {
                         CompactPlayerOverlay(
                             navigator = navigator,
                             navigationState = navigation,
-                            viewModel = remember { AppShellViewModel() },
+                            viewModel = viewModel,
                             onQueue = {}, onAlternativeSource = {}, onExpandLyrics = {},
                             illustratedArt = art,
                             floatingPlayer = { modifier, expand ->
+                                illustratedMotion = LocalIllustratedPlayer.current
                                 FloatingPlayerContent(
                                     playerUiState = PlayerUiState(),
                                     modifier = modifier,
@@ -116,19 +120,29 @@ class IllustratedPlayerTest {
                     scene.render(time).close()
                     time += 16_000_000L
                 }
-                fun screenshot(label: String): BufferedImage {
+                fun screenshot(label: String? = null): BufferedImage {
                     val png = scene.render(time).use { image ->
                         assertNotNull(image.encodeToData()).use { it.bytes }
                     }
-                    output.resolve("${style.name.lowercase()}-${label}.png").writeBytes(png)
+                    if (label != null) output.resolve("${style.name.lowercase()}-${label}.png").writeBytes(png)
                     return ImageIO.read(ByteArrayInputStream(png))
                 }
                 step(15)
                 val dock = screenshot("dock")
+                val motion = assertNotNull(illustratedMotion)
                 val firstPageColor = background.value.toArgb()
                 assertNoPageAtLowerEdges(dock, firstPageColor, label = style.name)
                 assertEquals(dock.getRGB(0, height - 100), dock.getRGB(0, height - 2),
                     "${style.name} should use the same surface at the edges of both rows")
+                if (style == AppearanceStyle.TORMENTIL) {
+                    val dockHeight = assertNotNull(viewModel.compactChromeUiState.value.measuredBottomBarHeight)
+                    val dockTop = height - dockHeight.value.toInt()
+                    val peekX = motion.peekBounds.center.x.toInt()
+                    val showsPaws = (dockTop + 1..dockTop + 6).any { y ->
+                        (peekX - 19..peekX + 19).any { x -> dock.getRGB(x, y) != dock.getRGB(0, y) }
+                    }
+                    assertTrue(showsPaws, "The fox's paws should overlap the dock")
+                }
                 background.value = Color.Cyan
                 step(8)
                 val differentPage = screenshot("dock-second-background")
@@ -152,6 +166,14 @@ class IllustratedPlayerTest {
                 val hanging = screenshot("hang")
                 assertEquals(background.value.toArgb(), hanging.getRGB(5, 20),
                     "${style.name} should still be partway open")
+                if (style == AppearanceStyle.TORMENTIL) {
+                    val sheetTop = motion.sheetOffset().toInt()
+                    val gripX = (width * .70f).toInt()
+                    val showsPaws = (sheetTop - 6 until sheetTop - 1).any { y ->
+                        (gripX - 18..gripX + 18).any { x -> hanging.getRGB(x, y) != background.value.toArgb() }
+                    }
+                    assertTrue(showsPaws, "The fox should wrap its paws over the top edge as it moves")
+                }
 
                 pointer(PointerEventType.Move, start.copy(y = 50f))
                 step(8)
@@ -161,6 +183,29 @@ class IllustratedPlayerTest {
                 assertEquals(Color.DarkGray.toArgb(), resting.getRGB(5, 20), "${style.name} should be open")
                 assertTrue(resting.getRGB(2, height - 2) != Color.DarkGray.toArgb(), "scene should reach bottom-left")
                 assertTrue(resting.getRGB(width - 3, height - 2) != Color.DarkGray.toArgb(), "scene should reach bottom-right")
+                if (style == AppearanceStyle.STRAWBERRIES) {
+                    val sceneBounds = motion.sceneBounds
+                    assertTrue(abs(sceneBounds.width / sceneBounds.height - 3f) < .03f,
+                        "The art should keep its original aspect ratio")
+                }
+                if (style == AppearanceStyle.BLUE_POND) {
+                    val paddedCrop = (width * .50f).toInt() until (width * .77f).toInt()
+                    var strongest = resting
+                    var mostChanged = 0
+                    repeat(16) {
+                        step(9)
+                        val sample = screenshot()
+                        val changed = (height - 139 until height - 39).sumOf { y ->
+                            paddedCrop.count { x -> sample.getRGB(x, y) != resting.getRGB(x, y) }
+                        }
+                        if (changed > mostChanged) {
+                            strongest = sample
+                            mostChanged = changed
+                        }
+                    }
+                    assertTrue(mostChanged > 8, "The frog's throat should pulse while the player is open")
+                    ImageIO.write(strongest, "png", output.resolve("blue_pond-croak.png"))
+                }
 
                 pointer(PointerEventType.Press, Offset(width / 2f, 45f))
                 step(3)

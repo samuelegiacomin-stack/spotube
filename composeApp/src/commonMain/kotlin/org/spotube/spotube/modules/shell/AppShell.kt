@@ -381,7 +381,7 @@ internal fun CompactPlayerOverlay(
     }
     val illustratedMotion = remember(illustratedArt, sheetState) {
         illustratedArt?.let { art ->
-            IllustratedPlayerMotion(art, progress = { progress }) {
+            IllustratedPlayerMotion(art, progress = { progress }, sheetOffset = { sheetState.offset }) {
                 sheetState.isIdle && sheetState.currentDetent == SheetDetent.FullyExpanded
             }
         }
@@ -423,9 +423,6 @@ internal fun CompactPlayerOverlay(
                                     },
                                 { scope.launch { sheetState.animateTo(SheetDetent.FullyExpanded) } })
                         }
-                        if (illustratedMotion != null) {
-                            IllustratedPlayerOverlay(illustratedMotion, Modifier.matchParentSize())
-                        }
                     }
                 }
             }
@@ -441,6 +438,9 @@ internal fun CompactPlayerOverlay(
                     .graphicsLayer {
                         alpha = viewModel.floatingPlayerAlpha(progress)
                     })
+            if (illustratedMotion != null) {
+                IllustratedPlayerOverlay(illustratedMotion, bottomBarHeightPx, Modifier.matchParentSize())
+            }
         }
     }
 }
