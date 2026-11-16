@@ -26,8 +26,10 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -48,6 +50,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.PreviewLightDark
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import org.spotube.spotube.core.ui.component.LocalAnimatedVisibilityScope
 import org.spotube.spotube.core.ui.component.LocalSharedTransitionScope
 import org.spotube.spotube.core.ui.component.sharedElementOrNone
@@ -57,6 +60,7 @@ import org.spotube.spotube.resources.iconsax.Iconsax
 import org.spotube.spotube.resources.iconsax.IconsaxAddSquare
 import org.spotube.spotube.resources.iconsax.IconsaxPause
 import org.spotube.spotube.resources.iconsax.IconsaxPlay
+import org.spotube.spotube.resources.iconsax.IconsaxShuffle
 import org.jetbrains.compose.resources.stringResource
 import spotube.composeapp.generated.resources.Res
 import spotube.composeapp.generated.resources.player_add_to_queue_content_description
@@ -64,6 +68,7 @@ import spotube.composeapp.generated.resources.player_pause_content_description
 import spotube.composeapp.generated.resources.player_play_content_description
 import spotube.composeapp.generated.resources.media_preview_title
 import spotube.composeapp.generated.resources.media_preview_subtitle
+import spotube.composeapp.generated.resources.collection_details_shuffle_play
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -79,9 +84,27 @@ fun PlayableCard(
     sharedElementKey: String? = null,
     listMode: Boolean = false,
     playLoading: Boolean = false,
-    addToQueueLoading: Boolean = false
+    addToQueueLoading: Boolean = false,
+    onShuffle: (() -> Unit)? = null,
+    shuffleLoading: Boolean = false,
+    shuffleActive: Boolean = false,
 ) {
+    val shuffleAction: (@Composable (Dp) -> Unit)? = if (onShuffle == null) null else {
+        { size ->
+            MillenniumIconButton(
+                onClick = onShuffle,
+                modifier = Modifier.size(size),
+                loading = shuffleLoading,
+                style = if (shuffleActive) MillenniumIconButtonStyle.Primary else MillenniumIconButtonStyle.Secondary,
+            ) {
+                MillenniumIcon(Iconsax.IconsaxShuffle, stringResource(Res.string.collection_details_shuffle_play))
+            }
+        }
+    }
     if (listMode) {
+        val listShuffle: (@Composable () -> Unit)? = if (shuffleAction != null) {
+            { shuffleAction(40.dp) }
+        } else null
         PlayableListTile(
             title,
             subtitle,
@@ -93,7 +116,8 @@ fun PlayableCard(
             modifier,
             sharedElementKey,
             playLoading = playLoading,
-            addToQueueLoading = addToQueueLoading
+            addToQueueLoading = addToQueueLoading,
+            trailingContent = listShuffle,
         )
         return
     }
@@ -105,7 +129,7 @@ fun PlayableCard(
     MediaCardSurface(
         modifier = modifier.width(160.dp),
         onClick = onClick ?: onPlay,
-        interactive = onClick != null || onPlay != null || onAddToQueue != null
+        interactive = onClick != null || onPlay != null || onAddToQueue != null || onShuffle != null
     ) { highlighted ->
         Column(modifier = Modifier.fillMaxWidth()) {
             Box(modifier = Modifier.fillMaxWidth().shimmerApply()) {
@@ -124,19 +148,19 @@ fun PlayableCard(
                     shape = coverShape
                 )
 
-                if (onPlay != null || onAddToQueue != null)
+                if (onPlay != null || onAddToQueue != null || onShuffle != null)
                     Box(
                         modifier = Modifier.fillMaxWidth().aspectRatio(1f).padding(8.dp),
                         contentAlignment = Alignment.BottomEnd
                     ) {
                         this@Column.AnimatedVisibility(
                             visible = highlighted || touchInput || (isPlaying && onPlay != null) ||
-                                playLoading || addToQueueLoading,
+                                playLoading || addToQueueLoading || shuffleLoading,
                             enter = fadeIn(),
                             exit = fadeOut()
                         ) {
                             Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
+                                horizontalAlignment = Alignment.End,
                                 modifier = Modifier.padding(4.dp)
                             ) {
                                 // While this collection is playing the play/pause toggle stays
@@ -157,27 +181,33 @@ fun PlayableCard(
                                     }
                                     Spacer(modifier = Modifier.height(8.dp))
                                 }
-                                onPlay?.let {
-                                    MillenniumIconButton(
-                                        onClick = onPlay,
-                                        loading = playLoading,
-                                        modifier = Modifier.size(34.dp),
-                                        style = MillenniumIconButtonStyle.Primary
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    shuffleAction?.invoke(34.dp)
+                                    onPlay?.let {
+                                        MillenniumIconButton(
+                                            onClick = onPlay,
+                                            loading = playLoading,
+                                            modifier = Modifier.size(34.dp),
+                                            style = MillenniumIconButtonStyle.Primary
 
-                                    ) {
-                                        MillenniumIcon(
-                                            imageVector = if (isPlaying) {
-                                                Iconsax.IconsaxPause
-                                            } else Iconsax.IconsaxPlay,
-                                            contentDescription = stringResource(
-                                                if (isPlaying) {
-                                                    Res.string.player_pause_content_description
-                                                } else {
-                                                    Res.string.player_play_content_description
-                                                }
-                                            ),
-                                            tint = LocalTextStyle.current.color
-                                        )
+                                        ) {
+                                            MillenniumIcon(
+                                                imageVector = if (isPlaying) {
+                                                    Iconsax.IconsaxPause
+                                                } else Iconsax.IconsaxPlay,
+                                                contentDescription = stringResource(
+                                                    if (isPlaying) {
+                                                        Res.string.player_pause_content_description
+                                                    } else {
+                                                        Res.string.player_play_content_description
+                                                    }
+                                                ),
+                                                tint = LocalTextStyle.current.color
+                                            )
+                                    }
                                     }
                                 }
                             }

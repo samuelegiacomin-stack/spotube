@@ -313,8 +313,10 @@ actual class AudioPlayer actual constructor(context: Any) : AudioPlayerInterface
 
             val rebuilt = if (enabled) {
                 if (currentItem != null) {
-                    val rest = originalPlaylist.filterNot { it.url == currentItem.url }.shuffled()
-                    listOf(currentItem) + rest
+                    val rest = originalPlaylist.toMutableList()
+                    val index = rest.indexOfOccurrence(currentItem)
+                    if (index >= 0) rest.removeAt(index)
+                    listOf(currentItem) + rest.shuffled()
                 } else {
                     originalPlaylist.shuffled()
                 }
@@ -332,13 +334,16 @@ actual class AudioPlayer actual constructor(context: Any) : AudioPlayerInterface
 
             val nextIndex = when {
                 currentItem == null -> if (currentPlaylist.isEmpty()) -1 else 0
-                else -> currentPlaylist.indexOfFirst { it.url == currentItem.url }
-                    .takeIf { it >= 0 } ?: 0
+                else -> currentPlaylist.indexOfOccurrence(currentItem).coerceAtLeast(0)
             }
 
             currentIndex = nextIndex
             _currentMediaItem.tryEmit(currentPlaylist.getOrNull(nextIndex))
         }
+    }
+
+    override suspend fun queueSnapshot(): PlaybackQueueSnapshot = lock.withLock {
+        originalPlaylist.snapshotFor(currentPlaylist.getOrNull(currentIndex), shuffleEnabled)
     }
 
     actual override suspend fun load(

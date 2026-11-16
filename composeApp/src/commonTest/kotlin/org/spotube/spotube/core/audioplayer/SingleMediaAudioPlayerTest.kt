@@ -135,6 +135,7 @@ class SingleMediaAudioPlayerTest {
         player.shuffle(true)
         assertEquals(2, player.playlistFlow.value.count { it.url == "a" })
         player.shuffle(false)
+        engine.callback!!.onState(NativePlayerState.OPENING)
         repeat(3) { player.skipToNext() }
 
         assertEquals("c", player.currentMediaItemFlow.value?.url)
@@ -144,6 +145,7 @@ class SingleMediaAudioPlayerTest {
 
     @Test fun pausingAQueuedSkipDoesNotRestartPlaybackLater() = scenario { player, engine ->
         player.load(listOf(item("a"), item("b")), true, 0)
+        engine.callback!!.onState(NativePlayerState.OPENING)
         player.skipToNext()
         player.pause()
         delay(250)
@@ -151,6 +153,26 @@ class SingleMediaAudioPlayerTest {
         assertEquals(listOf("a"), engine.loads)
         player.play()
         assertEquals(listOf("a", "b"), engine.loads)
+    }
+
+    @Test fun anIsolatedSkipAsksTheEngineToPlayBeforeTheCommandReturns() = scenario { player, engine ->
+        player.load(listOf(item("a"), item("b")), true, 0)
+        player.skipToNext()
+        assertEquals(listOf("a", "b"), engine.loads)
+        player.skipToPrevious()
+        assertEquals(listOf("a", "b", "a"), engine.loads)
+    }
+
+    @Test fun shuffledLoadStartsAtTheRequestedOccurrenceAndRemembersCanonicalOrder() = scenario { player, engine ->
+        val items = listOf(item("b"), item("a"), item("a"), item("c"))
+        player.loadShuffled(items, true, 2)
+        assertTrue(player.shuffleModeFlow.value)
+        assertSame(items[2], player.currentMediaItemFlow.value)
+        assertEquals(listOf("a"), engine.loads)
+        assertEquals(PlaybackQueueSnapshot(items, 2, true), player.queueSnapshot())
+        player.shuffle(false)
+        assertEquals(items, player.playlistFlow.value)
+        assertSame(items[2], player.currentMediaItemFlow.value)
     }
 
     @Test fun oldCompletionDoesNotOverrideManualSelection() = scenario { player, engine ->

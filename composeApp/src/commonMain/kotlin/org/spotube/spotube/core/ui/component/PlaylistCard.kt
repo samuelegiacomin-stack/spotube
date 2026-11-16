@@ -48,15 +48,17 @@ fun PlaylistCard(
 ) {
     val player: AudioPlayerInterface = koinInject()
     val playerState by player.playerStateFlow.collectAsStateWithLifecycle()
+    val shuffleEnabled by player.shuffleModeFlow.collectAsStateWithLifecycle()
     val currentCollectionEntry by audioPlayerQueue.currentCollectionEntryFlow.collectAsStateWithLifecycle()
     val busyCollections by remotePlaybackController.busyCollections.collectAsStateWithLifecycle()
+    val isCurrentPlaylist = currentCollectionEntry is QueueCollectionEntry.Playlist &&
+        currentCollectionEntry?.id == playlist.id
 
     PlayableCard(
         title = playlist.title,
         subtitle = playlist.description,
         imageURL = playlist.thumbnails.firstOrNull()?.url,
-        isPlaying = currentCollectionEntry is QueueCollectionEntry.Playlist &&
-            currentCollectionEntry?.id == playlist.id &&
+        isPlaying = isCurrentPlaylist &&
             (playerState == PlayerState.PLAYING || playerState == PlayerState.BUFFERING),
         onClick = {
             navigationCommands.navigateTo(Routes.Playlist(playlist.id))
@@ -64,6 +66,15 @@ fun PlaylistCard(
         onPlay = {
             remotePlaybackController.togglePlaylistPlayback(playlist.id, playlist.title)
         },
+        onShuffle = {
+            remotePlaybackController.requestCollectionPlay(
+                RemoteCollectionType.Playlist, playlist.id, playlist.title, shuffle = true,
+            )
+        },
+        shuffleActive = isCurrentPlaylist && shuffleEnabled,
+        shuffleLoading = CollectionPlaybackKey(
+            RemoteCollectionType.Playlist, playlist.id, PlaybackDestinationAction.Play, shuffle = true,
+        ) in busyCollections,
         onAddToQueue = {
             remotePlaybackController.requestCollectionAddToQueue(
                 RemoteCollectionType.Playlist,

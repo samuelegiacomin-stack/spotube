@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.get
 import kotlin.random.Random
@@ -65,6 +67,9 @@ class DeviceAudioPlayerQueue(
             .firstOrNull { it.track.id == trackId }
     private val currentCollectionEntryState = MutableStateFlow<QueueCollectionEntry?>(null)
     private val collectionHistoryState = MutableStateFlow<List<QueueCollectionEntry>>(emptyList())
+
+    private val collectionLoadLock = Mutex()
+    private val expandingSeed = MutableStateFlow<List<QueueEntry>?>(null)
 
     private var isRestoringPersistedState = true
     private val restorationJob: Job
@@ -109,26 +114,21 @@ class DeviceAudioPlayerQueue(
         }
 
         scope.launch {
-            audioPlayer.playlistFlow.collect {
-                logger.d { "Playlist changed, persisting queue state" }
-                persistQueueStateIfReady()
-            }
-        }
-
-        scope.launch {
-            audioPlayer.currentMediaItemFlow.collect {
-                logger.d { "Current media item changed, persisting queue state" }
-                persistQueueStateIfReady()
-            }
+            combine(audioPlayer.playlistFlow, audioPlayer.currentMediaItemFlow, audioPlayer.shuffleModeFlow) {
+                _, _, _ -> Unit
+            }.collect { persistQueueStateIfReady() }
         }
 
         scope.launch {
             combine(
                 audioPlayer.currentMediaItemFlow,
                 audioPlayer.playlistFlow,
-                audioPlayer.loopStateFlow) { currentMedia, playlist, loopState ->
-                Triple(currentMedia, playlist, loopState)
-            }.collect { (currentMedia, playlist, loopState) ->
+                audioPlayer.loopStateFlow,
+                expandingSeed,
+            ) { currentMedia, playlist, loopState, seed ->
+                Triple(currentMedia, playlist, loopState).takeIf { seed == null }
+            }.collect {
+                val (currentMedia, playlist, loopState) = it ?: return@collect
                 if (currentMedia == null || playlist.isEmpty()) return@collect
                 if (loopState == LoopState.ALL) return@collect
 
@@ -145,19 +145,27 @@ class DeviceAudioPlayerQueue(
 
     override val supportsProgressiveCollections: Boolean get() = audioPlayer is SeamlessPlaylistUpdater
 
+    override val isShuffling: Boolean get() = audioPlayer.shuffleModeFlow.value
+
+    override fun finishCollectionExpansion(seed: List<QueueEntry>) {
+        expandingSeed.update { if (it === seed) null else it }
+    }
+
     override suspend fun completeCollection(
         seed: List<QueueEntry>,
         entries: List<QueueEntry>,
         collection: QueueCollectionEntry,
     ): Boolean {
         val updater = audioPlayer as? SeamlessPlaylistUpdater ?: return false
-        if (currentCollectionEntryState.value != collection) return false
+        if (expandingSeed.value !== seed || currentCollectionEntryState.value != collection) return false
         val expectedUrls = resolveMediaItems(seed).map { it.first.url }
         val resolved = resolveMediaItems(entries)
-        if (currentCollectionEntryState.value != collection) return false
-        // Publish metadata before the engine exposes any of these proxy URLs.
-        entryByMediaUrl.update { it + entriesByUrl(resolved) }
-        val accepted = updater.replacePlaylistKeepingCurrent(expectedUrls, resolved.map { it.first })
+        val accepted = collectionLoadLock.withLock {
+            if (expandingSeed.value !== seed || currentCollectionEntryState.value != collection) return@withLock false
+            // Publish metadata before the engine exposes any of these proxy URLs.
+            entryByMediaUrl.update { it + entriesByUrl(resolved) }
+            updater.replacePlaylistKeepingCurrent(expectedUrls, resolved.map { it.first })
+        }
         if (accepted) persistQueueStateIfReady()
         return accepted
     }
@@ -166,7 +174,18 @@ class DeviceAudioPlayerQueue(
         entries: List<QueueEntry>,
         autoPlay: Boolean,
         startPosition: Int,
-        collectionEntry: QueueCollectionEntry?) {
+        collectionEntry: QueueCollectionEntry?,
+    ) = loadEntries(entries, autoPlay, startPosition, collectionEntry, shuffle = false, expanding = false)
+
+    override suspend fun loadCollection(
+        entries: List<QueueEntry>, startPosition: Int, collection: QueueCollectionEntry,
+        shuffle: Boolean, expanding: Boolean,
+    ) = loadEntries(entries, true, startPosition, collection, shuffle, expanding)
+
+    private suspend fun loadEntries(
+        entries: List<QueueEntry>, autoPlay: Boolean, startPosition: Int,
+        collectionEntry: QueueCollectionEntry?, shuffle: Boolean, expanding: Boolean,
+    ) {
         logger.i { "Loading queue with ${entries.size} entries, autoPlay=$autoPlay, startPosition=$startPosition" }
         stopRestoration()
         val resolved = resolveMediaItems(entries)
@@ -177,9 +196,14 @@ class DeviceAudioPlayerQueue(
         val normalizedStartPosition =
             if (mediaItems.isEmpty()) 0 else startPosition.coerceIn(0, mediaItems.lastIndex)
         logger.d { "Normalized start position: $startPosition -> $normalizedStartPosition" }
-        entryByMediaUrl.value = entriesByUrl(resolved)
-        updateCollectionContext(collectionEntry)
-        audioPlayer.load(mediaItems, autoPlay, normalizedStartPosition)
+        collectionLoadLock.withLock {
+            if (expanding) expandingSeed.value = entries
+            entryByMediaUrl.value = entriesByUrl(resolved)
+            updateCollectionContext(collectionEntry)
+            if (shuffle) audioPlayer.loadShuffled(mediaItems, autoPlay, normalizedStartPosition)
+            else audioPlayer.load(mediaItems, autoPlay, normalizedStartPosition)
+            if (!expanding) expandingSeed.value = null
+        }
         persistQueueStateIfReady()
         logger.i { "Queue loaded successfully" }
     }
@@ -316,10 +340,13 @@ class DeviceAudioPlayerQueue(
     override suspend fun clear() {
         logger.i { "Clearing queue and collection history" }
         stopRestoration()
-        entryByMediaUrl.value = emptyMap()
-        currentCollectionEntryState.value = null
-        collectionHistoryState.value = emptyList()
-        audioPlayer.load(emptyList(), autoPlay = false, startPosition = 0)
+        collectionLoadLock.withLock {
+            entryByMediaUrl.value = emptyMap()
+            currentCollectionEntryState.value = null
+            collectionHistoryState.value = emptyList()
+            audioPlayer.load(emptyList(), autoPlay = false, startPosition = 0)
+            expandingSeed.value = null
+        }
         repository.clearState()
         logger.i { "Queue cleared successfully" }
     }
@@ -352,7 +379,7 @@ class DeviceAudioPlayerQueue(
     }
 
     private suspend fun handleQueueCompletion() {
-        if (isFetchingRecommendations || endlessPlaybackSuppressed) return
+        if (isFetchingRecommendations || endlessPlaybackSuppressed || expandingSeed.value != null) return
 
         val settings = settingsProvider.settingsState.value ?: return
         if (!settings.enableEndlessPlayback) return
@@ -416,7 +443,8 @@ class DeviceAudioPlayerQueue(
             // Recommendations can arrive after the final item ended, or after the user
             // selected another collection. Resume only the same finished queue.
             if (audioPlayer.currentMediaItemFlow.value?.url != requestedMedia ||
-                currentCollectionEntryState.value != requestedCollection || endlessPlaybackSuppressed) return
+                currentCollectionEntryState.value != requestedCollection || endlessPlaybackSuppressed ||
+                expandingSeed.value != null) return
             addAllToQueue(newEntries)
             audioPlayer.continueAfterQueueEnd(requestedMedia)
         } catch (cancelled: CancellationException) {
@@ -462,7 +490,8 @@ class DeviceAudioPlayerQueue(
         entryByMediaUrl.value = entriesByUrl(restored)
         val normalizedStartPosition = state.currentIndex.coerceIn(0, mediaItems.lastIndex)
         logger.d { "Loading restored playlist with normalized start position: ${state.currentIndex} -> $normalizedStartPosition" }
-        audioPlayer.load(mediaItems, autoPlay = false, startPosition = normalizedStartPosition)
+        if (state.shuffleEnabled) audioPlayer.loadShuffled(mediaItems, false, normalizedStartPosition)
+        else audioPlayer.load(mediaItems, autoPlay = false, startPosition = normalizedStartPosition)
         logger.i { "Persisted state restored successfully" }
     }
 
@@ -523,27 +552,24 @@ class DeviceAudioPlayerQueue(
             return
         }
 
-        val queueEntries = getQueue()
+        val snapshot = audioPlayer.queueSnapshot()
+        val knownEntries = entryByMediaUrl.value
+        val queueEntries = snapshot.entries.map { knownEntries[it.url] ?: it.toFallbackQueueEntry() }
         if (queueEntries.isEmpty()) {
             logger.d { "Persisting queue state: clearing state (queue is empty)" }
             repository.clearState()
             return
         }
 
-        val playlist = audioPlayer.playlistFlow.value
-        val currentMedia = audioPlayer.currentMediaItemFlow.value
-        val currentIndex = currentMedia?.let { current ->
-            playlist.indexOfFirst { it.url == current.url }.takeIf { it >= 0 }
-        } ?: 0
-        val normalizedCurrentIndex = currentIndex.coerceIn(0, queueEntries.lastIndex)
+        val normalizedCurrentIndex = snapshot.currentIndex.coerceIn(0, queueEntries.lastIndex)
 
-        logger.d { "Persisting queue state: ${queueEntries.size} entries, currentIndex=$currentIndex (normalized: $normalizedCurrentIndex)" }
         repository.saveState(
             PersistedQueueState(
                 entries = queueEntries,
                 currentIndex = normalizedCurrentIndex,
                 currentCollectionEntry = currentCollectionEntryState.value,
-                collectionHistory = collectionHistoryState.value)
+                collectionHistory = collectionHistoryState.value,
+                shuffleEnabled = snapshot.shuffled)
         )
     }
 

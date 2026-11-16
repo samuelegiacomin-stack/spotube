@@ -24,8 +24,8 @@ class FakeAudioPlayer : AudioPlayerInterface {
 
     private val _loopStateFlow = MutableStateFlow(LoopState.NONE)
     override val loopStateFlow: StateFlow<LoopState> = _loopStateFlow.asStateFlow()
-    override val shuffleModeFlow: StateFlow<Boolean>
-        get() = TODO("Not yet implemented")
+    private val shuffleMode = MutableStateFlow(false)
+    override val shuffleModeFlow: StateFlow<Boolean> = shuffleMode.asStateFlow()
     override val playbackSpeedFlow: StateFlow<Float>
         get() = TODO("Not yet implemented")
     override val volumeFlow: StateFlow<Float>
@@ -79,6 +79,7 @@ class FakeAudioPlayer : AudioPlayerInterface {
         lastLoadPlaylist = playlist
         lastLoadAutoPlay = autoPlay
         lastLoadStartPosition = startPosition
+        shuffleMode.value = false
         _playlistFlow.value = playlist.toList()
         _currentMediaItemFlow.value = playlist.getOrNull(startPosition)
     }
@@ -104,7 +105,7 @@ class FakeAudioPlayer : AudioPlayerInterface {
     }
 
     override suspend fun shuffle(enabled: Boolean) {
-        TODO("Not yet implemented")
+        shuffleMode.value = enabled
     }
 
     override suspend fun addMediaItem(mediaItem: MediaItem) {

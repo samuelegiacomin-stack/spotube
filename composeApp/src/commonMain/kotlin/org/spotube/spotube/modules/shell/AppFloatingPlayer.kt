@@ -228,7 +228,6 @@ internal fun FloatingPlayerContent(
 
                 if (illustratedMotion != null) {
                     IllustratedPlayerPeek(illustratedMotion)
-                    Spacer(Modifier.weight(.43f))
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (illustratedMotion == null && appearance.isIllustrated) {

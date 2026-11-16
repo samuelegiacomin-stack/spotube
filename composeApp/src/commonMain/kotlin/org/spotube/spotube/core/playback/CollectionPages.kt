@@ -10,9 +10,10 @@ import org.spotube.plugin_interfaces.plugin_apis.metadata.common.PaginationStrat
 /** Fetch known offset pages in bounded batches; preserve order and never return a partial
  * collection after a failed page. Cursor-based plugins retain their sequential contract. */
 internal suspend fun <T> loadCollectionPages(
+    firstPage: PaginationResult<T>? = null,
     fetch: suspend (PaginationStrategy?) -> PaginationResult<T>?,
 ): List<T> {
-    val first = fetch(PaginationStrategy.Offset(0, 100)) ?: return emptyList()
+    val first = firstPage ?: fetch(PaginationStrategy.Offset(0, 100)) ?: return emptyList()
     val items = first.items.toMutableList()
     var next = first.nextPagination ?: return items
     if (next is PaginationStrategy.Offset && next.offset > 0 && next.limit in 1..100 &&

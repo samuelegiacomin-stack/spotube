@@ -95,9 +95,12 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
             }
             self.lastReportedDurationMs = 0
             self.player.media = media
-            self.applyPlaybackSettings()
             self.report(.opening)
-            if autoPlay { self.startPlayback() }
+            if autoPlay {
+                self.startPlayback()
+            } else {
+                self.applyPlaybackSettings()
+            }
         }
     }
 
@@ -208,11 +211,13 @@ final class VlcPlayerEngine: NSObject, NativePlayerEngine, VLCMediaPlayerDelegat
     // MARK: Internals
 
     private func startPlayback() {
-        do {
-            try audioSession.setCategory(.playback, mode: .default, options: [])
-        } catch {
-            listener?.onError(message: "Could not configure audio session: \(error.localizedDescription)")
-            return
+        if audioSession.category != .playback || audioSession.mode != .default || !audioSession.categoryOptions.isEmpty {
+            do {
+                try audioSession.setCategory(.playback, mode: .default, options: [])
+            } catch {
+                listener?.onError(message: "Could not configure audio session: \(error.localizedDescription)")
+                return
+            }
         }
         do {
             try audioSession.setActive(true)

@@ -494,6 +494,22 @@ class DeviceAudioPlayerQueueTest {
     // --- persistence ---
 
     @Test
+    fun `shuffled collection saves and restores the mode and selected track`() = runTest {
+        val collection = QueueCollectionEntry.Playlist("main")
+        createQueue().loadCollection(listOf(streamingEntry("a"), streamingEntry("b")), 1, collection, shuffle = true)
+        val state = assertNotNull(fakeRepo.getPersistedState())
+        assertTrue(state.shuffleEnabled)
+        assertEquals(1, state.currentIndex)
+        fakePlayer = FakeAudioPlayer()
+        val restored = createQueue()
+        withContext(Dispatchers.Default) {
+            withTimeout(5_000) { while (!restored.isShuffling) delay(10) }
+        }
+        assertEquals("b", restored.getCurrentQueueEntry()?.let { (it as QueueEntry.StreamingTrack).track.id })
+        assertEquals(false, fakePlayer.lastLoadAutoPlay)
+    }
+
+    @Test
     fun `restorePersistedState loads from repository on init`() = runTest {
         val entries = listOf(streamingEntry("t1"))
         fakeRepo.setState(

@@ -36,6 +36,9 @@ actual class AudioPlayer actual constructor(context: Any) : AudioPlayerInterface
     actual override suspend fun loop(state: LoopState) = delegate.loop(state)
     actual override suspend fun shuffle(enabled: Boolean) = delegate.shuffle(enabled)
     actual override suspend fun load(playlist: List<MediaItem>, autoPlay: Boolean, startPosition: Int) = delegate.load(playlist, autoPlay, startPosition)
+    override suspend fun loadShuffled(playlist: List<MediaItem>, autoPlay: Boolean, startPosition: Int) =
+        delegate.loadShuffled(playlist, autoPlay, startPosition)
+    override suspend fun queueSnapshot(): PlaybackQueueSnapshot = delegate.queueSnapshot()
     actual override suspend fun addMediaItem(mediaItem: MediaItem) = delegate.addMediaItem(mediaItem)
     actual override suspend fun insertMediaItemAtNextIndex(mediaItem: MediaItem) = delegate.insertMediaItemAtNextIndex(mediaItem)
     actual override suspend fun removeMediaItem(mediaItem: MediaItem) = delegate.removeMediaItem(mediaItem)

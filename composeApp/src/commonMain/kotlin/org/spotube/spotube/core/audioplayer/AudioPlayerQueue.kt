@@ -21,6 +21,16 @@ import kotlinx.coroutines.flow.StateFlow
 
 interface AudioPlayerQueue {
     val supportsProgressiveCollections: Boolean get() = false
+    val isShuffling: Boolean get() = false
+    suspend fun loadCollection(
+        entries: List<QueueEntry>,
+        startPosition: Int,
+        collection: QueueCollectionEntry,
+        shuffle: Boolean,
+        expanding: Boolean = false,
+    ) = load(entries, autoPlay = true, startPosition = startPosition, collectionEntry = collection)
+
+    fun finishCollectionExpansion(seed: List<QueueEntry>) = Unit
     suspend fun completeCollection(
         seed: List<QueueEntry>,
         entries: List<QueueEntry>,

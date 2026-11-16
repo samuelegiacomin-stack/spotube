@@ -166,13 +166,14 @@ class IllustratedPlayerTest {
                 val hanging = screenshot("hang")
                 assertEquals(background.value.toArgb(), hanging.getRGB(5, 20),
                     "${style.name} should still be partway open")
-                if (style == AppearanceStyle.TORMENTIL) {
+                run {
                     val sheetTop = motion.sheetOffset().toInt()
-                    val gripX = (width * .70f).toInt()
+                    val gripX = motion.peekBounds.center.x.toInt()
+                    assertTrue(gripX >= width * .57f, "The mascot's resting anchor should be on the right")
                     val showsPaws = (sheetTop - 6 until sheetTop - 1).any { y ->
                         (gripX - 18..gripX + 18).any { x -> hanging.getRGB(x, y) != background.value.toArgb() }
                     }
-                    assertTrue(showsPaws, "The fox should wrap its paws over the top edge as it moves")
+                    assertTrue(showsPaws, "The mascot should grab the sheet at its resting horizontal anchor")
                 }
 
                 pointer(PointerEventType.Move, start.copy(y = 50f))

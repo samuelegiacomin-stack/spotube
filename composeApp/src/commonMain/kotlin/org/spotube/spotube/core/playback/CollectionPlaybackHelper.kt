@@ -27,6 +27,7 @@ import org.spotube.spotube.modules.blacklist.BlacklistRepository
 import org.spotube.spotube.modules.playlist.PlaylistRepository
 import org.spotube.spotube.modules.saved_tracks.SavedTracksRepository
 import org.spotube.spotube.core.remote.RemoteCollectionType
+import kotlin.random.Random
 
 class CollectionPlaybackHelper(
     private val albumRepository: AlbumRepository,
@@ -46,14 +47,13 @@ class CollectionPlaybackHelper(
 
     suspend fun playAlbum(albumId: String, shuffle: Boolean = false) {
         if (!shuffle && audioPlayerQueue.isAlbumPlaying(albumId)) return
-        if (progressive.play(QueueCollectionEntry.Album(albumId), shuffle) { albumRepository.getAlbumTracks(albumId, it) }) return
-        val entries = fetchAllAlbumTracks(albumId).let { if (shuffle) it.shuffled() else it }
+        val playShuffled = shuffle || audioPlayerQueue.isShuffling
+        val collection = QueueCollectionEntry.Album(albumId)
+        if (progressive.play(collection, playShuffled) { albumRepository.getAlbumTracks(albumId, it) }) return
+        val entries = fetchAllAlbumTracks(albumId)
         if (entries.isNotEmpty()) {
-            audioPlayerQueue.load(
-                entries = entries,
-                autoPlay = true,
-                startPosition = 0,
-                collectionEntry = QueueCollectionEntry.Album(albumId))
+            val start = if (playShuffled) Random.nextInt(entries.size) else 0
+            audioPlayerQueue.loadCollection(entries, start, collection, playShuffled)
         }
     }
 
@@ -84,7 +84,7 @@ class CollectionPlaybackHelper(
                 return
             }
         }
-        if (progressive.play(QueueCollectionEntry.Album(albumId), false, track) { albumRepository.getAlbumTracks(albumId, it) }) return
+        if (progressive.play(QueueCollectionEntry.Album(albumId), audioPlayerQueue.isShuffling, track) { albumRepository.getAlbumTracks(albumId, it) }) return
         val entries = fetchAllAlbumTracks(albumId)
         if (entries.isEmpty()) return
 
@@ -92,23 +92,18 @@ class CollectionPlaybackHelper(
             (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
         }.coerceAtLeast(0)
 
-        audioPlayerQueue.load(
-            entries = entries,
-            autoPlay = true,
-            startPosition = startPosition,
-            collectionEntry = QueueCollectionEntry.Album(albumId))
+        audioPlayerQueue.loadCollection(entries, startPosition, QueueCollectionEntry.Album(albumId), audioPlayerQueue.isShuffling)
     }
 
     suspend fun playPlaylist(playlistId: String, shuffle: Boolean = false) {
         if (!shuffle && audioPlayerQueue.isPlaylistPlaying(playlistId)) return
-        if (progressive.play(QueueCollectionEntry.Playlist(playlistId), shuffle) { playlistRepository.getPlaylistTracks(playlistId, it) }) return
-        val entries = fetchAllPlaylistTracks(playlistId).let { if (shuffle) it.shuffled() else it }
+        val playShuffled = shuffle || audioPlayerQueue.isShuffling
+        val collection = QueueCollectionEntry.Playlist(playlistId)
+        if (progressive.play(collection, playShuffled) { playlistRepository.getPlaylistTracks(playlistId, it) }) return
+        val entries = fetchAllPlaylistTracks(playlistId)
         if (entries.isNotEmpty()) {
-            audioPlayerQueue.load(
-                entries = entries,
-                autoPlay = true,
-                startPosition = 0,
-                collectionEntry = QueueCollectionEntry.Playlist(playlistId))
+            val start = if (playShuffled) Random.nextInt(entries.size) else 0
+            audioPlayerQueue.loadCollection(entries, start, collection, playShuffled)
         }
     }
 
@@ -139,7 +134,7 @@ class CollectionPlaybackHelper(
                 return
             }
         }
-        if (progressive.play(QueueCollectionEntry.Playlist(playlistId), false, track) { playlistRepository.getPlaylistTracks(playlistId, it) }) return
+        if (progressive.play(QueueCollectionEntry.Playlist(playlistId), audioPlayerQueue.isShuffling, track) { playlistRepository.getPlaylistTracks(playlistId, it) }) return
         val entries = fetchAllPlaylistTracks(playlistId)
         if (entries.isEmpty()) return
 
@@ -147,23 +142,18 @@ class CollectionPlaybackHelper(
             (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
         }.coerceAtLeast(0)
 
-        audioPlayerQueue.load(
-            entries = entries,
-            autoPlay = true,
-            startPosition = startPosition,
-            collectionEntry = QueueCollectionEntry.Playlist(playlistId))
+        audioPlayerQueue.loadCollection(entries, startPosition, QueueCollectionEntry.Playlist(playlistId), audioPlayerQueue.isShuffling)
     }
 
     suspend fun playSavedTracks(shuffle: Boolean = false) {
         if (!shuffle && audioPlayerQueue.isSavedTracksPlaying()) return
-        if (progressive.play(QueueCollectionEntry.SavedTracks, shuffle) { savedTracksRepository.getSavedTracks(it) }) return
-        val entries = fetchAllSavedTracks().let { if (shuffle) it.shuffled() else it }
+        val playShuffled = shuffle || audioPlayerQueue.isShuffling
+        val collection = QueueCollectionEntry.SavedTracks
+        if (progressive.play(collection, playShuffled) { savedTracksRepository.getSavedTracks(it) }) return
+        val entries = fetchAllSavedTracks()
         if (entries.isNotEmpty()) {
-            audioPlayerQueue.load(
-                entries = entries,
-                autoPlay = true,
-                startPosition = 0,
-                collectionEntry = QueueCollectionEntry.SavedTracks)
+            val start = if (playShuffled) Random.nextInt(entries.size) else 0
+            audioPlayerQueue.loadCollection(entries, start, collection, playShuffled)
         }
     }
 
@@ -211,7 +201,7 @@ class CollectionPlaybackHelper(
                 return
             }
         }
-        if (progressive.play(QueueCollectionEntry.SavedTracks, false, track) { savedTracksRepository.getSavedTracks(it) }) return
+        if (progressive.play(QueueCollectionEntry.SavedTracks, audioPlayerQueue.isShuffling, track) { savedTracksRepository.getSavedTracks(it) }) return
         val entries = fetchAllSavedTracks()
         if (entries.isEmpty()) return
 
@@ -228,11 +218,7 @@ class CollectionPlaybackHelper(
             (entry as? QueueEntry.StreamingTrack)?.track?.matchesTrack(track) == true
         }.coerceAtLeast(0)
 
-        audioPlayerQueue.load(
-            entries = entries,
-            autoPlay = true,
-            startPosition = startPosition,
-            collectionEntry = QueueCollectionEntry.SavedTracks)
+        audioPlayerQueue.loadCollection(entries, startPosition, QueueCollectionEntry.SavedTracks, audioPlayerQueue.isShuffling)
     }
 
     private suspend fun fetchAllAlbumTracks(albumId: String): List<QueueEntry> {

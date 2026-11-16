@@ -32,6 +32,17 @@ interface AudioPlayerInterface {
 
     // Playlist management
     suspend fun load(playlist: List<MediaItem>, autoPlay: Boolean, startPosition: Int)
+    suspend fun loadShuffled(playlist: List<MediaItem>, autoPlay: Boolean, startPosition: Int) {
+        load(playlist, autoPlay, startPosition)
+        shuffle(true)
+    }
+    suspend fun queueSnapshot(): PlaybackQueueSnapshot {
+        val items = playlistFlow.value
+        val current = currentMediaItemFlow.value
+        return PlaybackQueueSnapshot(
+            items, items.indexOfFirst { it.url == current?.url }.coerceAtLeast(0), shuffleModeFlow.value,
+        )
+    }
     suspend fun addMediaItem(mediaItem: MediaItem)
     suspend fun addMediaItems(mediaItems: List<MediaItem>) {
         mediaItems.forEach { addMediaItem(it) }
@@ -68,6 +79,15 @@ interface AudioPlayerInterface {
     fun isDisposed(): Boolean
     fun dispose() // Clean up resources when done. The player should not be used after this is called.
 }
+
+/** The order and selected occurrence to use when restoring a saved queue. */
+data class PlaybackQueueSnapshot(val entries: List<MediaItem>, val currentIndex: Int, val shuffled: Boolean)
+
+internal fun List<MediaItem>.indexOfOccurrence(item: MediaItem?): Int =
+    indexOfFirst { it === item }.takeIf { it >= 0 } ?: indexOfFirst { it.url == item?.url }
+
+internal fun List<MediaItem>.snapshotFor(item: MediaItem?, shuffled: Boolean): PlaybackQueueSnapshot =
+    PlaybackQueueSnapshot(toList(), indexOfOccurrence(item).coerceAtLeast(0), shuffled)
 
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 expect class AudioPlayer(context: Any) : AudioPlayerInterface {

@@ -17,10 +17,16 @@ class ProgressiveCollectionPlaybackTest {
     private class Queue : AudioPlayerQueue by FakeStreamingAudioPlayerQueue() {
         override val supportsProgressiveCollections = true
         val started = mutableListOf<List<QueueEntry>>()
+        var startedWithShuffle = false
         val completed = mutableListOf<Pair<QueueCollectionEntry, List<QueueEntry>>>()
         override suspend fun load(entries: List<QueueEntry>, autoPlay: Boolean, startPosition: Int, collectionEntry: QueueCollectionEntry?) {
             assertTrue(autoPlay)
             started += entries
+        }
+        override suspend fun loadCollection(entries: List<QueueEntry>, startPosition: Int, collection: QueueCollectionEntry,
+            shuffle: Boolean, expanding: Boolean) {
+            startedWithShuffle = shuffle
+            load(entries, true, startPosition, collection)
         }
         override suspend fun completeCollection(seed: List<QueueEntry>, entries: List<QueueEntry>, collection: QueueCollectionEntry): Boolean {
             completed += collection to entries
@@ -85,15 +91,15 @@ class ProgressiveCollectionPlaybackTest {
         assertFalse(loader.play(QueueCollectionEntry.Playlist("main"), false) { error("No read") })
     }
 
-    @Test fun shuffleKeepsDuplicatePlaylistOccurrencesAndTheSeedFirst() = runTest {
+    @Test fun shuffleUsesThePlayerModeAndPassesTheCanonicalOrderForExpansion() = runTest {
         val queue = Queue()
         val loader = ProgressiveCollectionPlayback(queue, ::entries, this)
         loader.play(QueueCollectionEntry.Playlist("main"), true, track("a")) {
-            PaginationResult(listOf(track("a"), track("a"), track("b")), 3, null)
+            PaginationResult(listOf(track("b"), track("a"), track("a")), 3, null)
         }
         advanceUntilIdle()
         val ids = queue.completed.single().second.map { (it as QueueEntry.StreamingTrack).track.id }
-        assertEquals("a", ids.first())
-        assertEquals(listOf("a", "a", "b"), ids.sorted())
+        assertTrue(queue.startedWithShuffle)
+        assertEquals(listOf("b", "a", "a"), ids)
     }
 }

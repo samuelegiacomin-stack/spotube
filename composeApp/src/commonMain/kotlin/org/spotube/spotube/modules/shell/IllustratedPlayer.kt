@@ -32,7 +32,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -44,7 +43,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
@@ -139,22 +137,8 @@ internal expect fun rememberReducePlayerMotion(): Boolean
 
 @Composable
 internal fun IllustratedPlayerPeek(motion: IllustratedPlayerMotion) {
-    val slot = Modifier.size(54.dp, 47.dp)
-    if (motion.art.style == AppearanceStyle.TORMENTIL) {
-        // Reserve room in the row. The foreground layer draws the paws over the dock.
-        Box(slot.onGloballyPositioned { motion.peekBounds = it.illustrationBounds() })
-        return
-    }
-    Image(
-        painter = painterResource(motion.art.peek),
-        contentDescription = null,
-        modifier = slot
-            .offset(y = 3.dp)
-            .graphicsLayer {
-                alpha = 1f - (motion.progress() / .15f).coerceIn(0f, 1f)
-            },
-        contentScale = ContentScale.Fit,
-    )
+    // One anchor for both poses. The foreground layer draws over the dock and the sheet lip.
+    Box(Modifier.size(54.dp, 47.dp).onGloballyPositioned { motion.peekBounds = it.illustrationBounds() })
 }
 
 @Composable
@@ -186,22 +170,23 @@ internal fun IllustratedPlayerOverlay(
     val art = motion.art
     val isFox = art.style == AppearanceStyle.TORMENTIL
     val isFrog = art.style == AppearanceStyle.BLUE_POND
-    val peek = if (isFox) painterResource(art.peek) else null
+    val isBerry = art.style == AppearanceStyle.STRAWBERRIES
+    val peek = painterResource(art.peek)
     val hanging = painterResource(art.hanging)
     val rest = painterResource(art.rest)
     val arrival = art.arrival?.let { painterResource(it) } ?: rest
     val reduceMotion = rememberReducePlayerMotion()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
-    val resumed = lifecycle.isAtLeast(Lifecycle.State.RESUMED)
+    val inForeground = lifecycle.isAtLeast(Lifecycle.State.STARTED)
     val expanded by remember(motion) { derivedStateOf(motion.expanded) }
     val time = remember(motion) { Animatable(0f) }
-    LaunchedEffect(motion, expanded, reduceMotion, resumed) {
+    LaunchedEffect(motion, expanded, reduceMotion, inForeground) {
         if (!expanded) {
             time.snapTo(0f)
-        } else if (reduceMotion || !resumed) {
+        } else if (reduceMotion || !inForeground) {
             time.snapTo(1f)
         } else if (time.value < 1f) {
-            time.animateTo(1f, tween(durationMillis = 1040, easing = LinearEasing))
+            time.animateTo(1f, tween(durationMillis = if (isBerry) 1800 else 1040, easing = LinearEasing))
         }
     }
     var viewport by remember { mutableStateOf(Rect.Zero) }
@@ -212,15 +197,15 @@ internal fun IllustratedPlayerOverlay(
         }
     }
     val landed by remember(time) { derivedStateOf { time.value == 1f } }
-    val idleMotion = if (expanded && sceneVisible && resumed && !reduceMotion && landed && (isFrog || isFox)) {
+    val idleMotion = if (expanded && sceneVisible && inForeground && !reduceMotion && landed && (isFrog || isFox)) {
         val transition = rememberInfiniteTransition(label = "Resting mascot")
         val animation = if (isFrog) {
             infiniteRepeatable(keyframes {
                 durationMillis = 4200
-                0f at 1040
-                1f at 1320
-                .82f at 1450
-                0f at 1710
+                0f at 390
+                1f at 730
+                .86f at 870
+                0f at 1200
                 0f at 2230
                 .76f at 2450
                 0f at 2730
@@ -237,21 +222,21 @@ internal fun IllustratedPlayerOverlay(
 
     Canvas(modifier = modifier.onGloballyPositioned { viewport = it.illustrationBounds() }) {
         val pull = motion.progress()
-        val lift = ((pull - .02f) / .13f).coerceIn(0f, 1f)
+        val lift = (pull / .045f).coerceIn(0f, 1f)
         val peekBounds = motion.peekBounds
-        val peekX = if (peekBounds.width > 0f) peekBounds.center.x - viewport.left else size.width * .51f
-        val gripX = peekX + (size.width * .70f - peekX) * lift
-        val gripOffset = (if (isFox) (-7).dp else 2.dp).toPx()
+        if (peekBounds.width <= 0f) return@Canvas
+        val gripX = peekBounds.center.x - viewport.left
+        val gripOffset = (-7).dp.toPx()
         val sheetY = motion.sheetOffset().takeIf { it.isFinite() } ?: 0f
         val gripY = (sheetY + gripOffset).coerceAtLeast(0f)
         val hangingHeight = art.hangingHeight.toPx()
         if (!expanded) {
-            if (peek != null && peekBounds.width > 0f) {
-                val opacity = (1f - pull / .15f).coerceIn(0f, 1f)
-                paintPose(peek, peekX, size.height - dockHeightPx + 8.dp.toPx(), 47.dp.toPx(), opacity)
-            }
+            val peekBottom = if (isFox) size.height - dockHeightPx + 8.dp.toPx()
+                else peekBounds.bottom - viewport.top + 3.dp.toPx()
+            val peekHeight = minOf(peekBounds.height, peekBounds.width / peek.aspectRatio)
+            paintPose(peek, gripX, peekBottom, peekHeight, 1f - lift)
             if (lift > 0f && !reduceMotion) {
-                val descent = hangingHeight * lift
+                val descent = peekHeight + (hangingHeight - peekHeight) * lift
                 paintPose(hanging, gripX, gripY + descent, descent, lift)
             }
             return@Canvas
@@ -264,10 +249,11 @@ internal fun IllustratedPlayerOverlay(
         val restHeight = restWidth / rest.aspectRatio
         val arrivalHeight = if (isFox) restHeight * 1.28f else restHeight
         val elapsed = if (reduceMotion) 1f else time.value
-        val drop = (elapsed / .58f).coerceIn(0f, 1f)
+        val impact = if (isBerry) .40f else .58f
+        val drop = (elapsed / impact).coerceIn(0f, 1f)
         val settle = ((elapsed - .72f) / .28f).coerceIn(0f, 1f)
         if (art.ripple != Color.Unspecified) {
-            val ripple = ((elapsed - .52f) / .33f).coerceIn(0f, 1f)
+            val ripple = ((elapsed - impact + .04f) / .33f).coerceIn(0f, 1f)
             if (ripple > 0f && ripple < 1f) {
                 drawLandingRipple(Offset(restX, groundY), restWidth, ripple, art.ripple, art.splash)
             }
@@ -282,6 +268,14 @@ internal fun IllustratedPlayerOverlay(
             val poseHeight = hangingHeight + (arrivalHeight - hangingHeight) * drop
             paintPose(hanging, x, y, poseHeight, 1f - changePose)
             paintPose(arrival, x, y, poseHeight, changePose)
+        } else if (isBerry) {
+            val dive = ((elapsed - impact) / .16f).coerceIn(0f, 1f)
+            val surface = ((elapsed - .61f) / .39f).coerceIn(0f, 1f)
+            val rise = surface * surface * (3f - 2f * surface)
+            val submerged = (dive - rise).coerceIn(0f, 1f)
+            clipRect(bottom = groundY - restHeight * .06f) {
+                paintPose(rest, restX, groundY + restHeight * submerged, restHeight, 1f)
+            }
         } else {
             val squash = 1f - .19f * sin(PI.toFloat() * ((elapsed - .58f) / .14f).coerceIn(0f, 1f))
             if (settle < 1f) paintPose(arrival, restX, groundY, arrivalHeight * squash, 1f - settle)
@@ -329,7 +323,7 @@ private fun DrawScope.paintCroakingFrog(
         for (band in 0 until bands) {
             val top = throatTop + band * bandHeight
             val profile = sin(PI.toFloat() * band / (bands - 1))
-            val stretch = 1f + .26f * strength * profile * profile
+            val stretch = 1f + .44f * strength * profile * profile
             clipRect(clipLeft, top, throatRight, top + bandHeight) {
                 scale(stretch, 1f, pivot = Offset(throatRight, top)) {
                     with(painter) { draw(poseSize) }

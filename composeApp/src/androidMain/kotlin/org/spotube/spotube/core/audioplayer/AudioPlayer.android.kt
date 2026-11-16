@@ -261,14 +261,12 @@ actual class AudioPlayer actual constructor(context: Any) : AudioPlayerInterface
             val currentIndex = exoPlayer.currentMediaItemIndex
             val current = currentPlaylist.getOrNull(currentIndex) ?: return@withContext
 
-            val rest = if (enabled) {
-                originalPlaylist.filterNot { it.url == current.url }.shuffled()
-            } else {
-                originalPlaylist.filterNot { it.url == current.url }
-            }
-            // Disabling restores original order around the current item.
-            val before = if (enabled) emptyList() else originalPlaylist.takeWhile { it.url != current.url }
-            val after = if (enabled) rest else originalPlaylist.dropWhile { it.url != current.url }.drop(1)
+            val originalIndex = originalPlaylist.indexOfOccurrence(current)
+            if (originalIndex < 0) return@withContext
+            // Disabling restores original order around the selected occurrence.
+            val before = if (enabled) emptyList() else originalPlaylist.take(originalIndex)
+            val remaining = originalPlaylist.drop(originalIndex + 1)
+            val after = if (enabled) (originalPlaylist.take(originalIndex) + remaining).shuffled() else remaining
 
             // Reorder in place around the playing item so playback is not interrupted.
             if (currentIndex < exoPlayer.mediaItemCount - 1) {
@@ -288,6 +286,10 @@ actual class AudioPlayer actual constructor(context: Any) : AudioPlayerInterface
             _playlist.tryEmit(currentPlaylist.toList())
             syncCurrentItem()
         }
+    }
+
+    override suspend fun queueSnapshot(): PlaybackQueueSnapshot = withContext(Dispatchers.Main) {
+        originalPlaylist.snapshotFor(currentPlaylist.getOrNull(exoPlayer.currentMediaItemIndex), shuffleEnabled)
     }
 
     actual override suspend fun load(

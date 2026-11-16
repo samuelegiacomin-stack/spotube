@@ -148,4 +148,5 @@ data class PersistedQueueState(
     val entries: List<QueueEntry>,
     val currentIndex: Int,
     val currentCollectionEntry: QueueCollectionEntry? = null,
-    val collectionHistory: List<QueueCollectionEntry> = emptyList())
+    val collectionHistory: List<QueueCollectionEntry> = emptyList(),
+    val shuffleEnabled: Boolean = false)

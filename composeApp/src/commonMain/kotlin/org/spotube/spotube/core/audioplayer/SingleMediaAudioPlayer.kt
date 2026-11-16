@@ -195,7 +195,9 @@ class SingleMediaAudioPlayer(
     private fun playIndexLocked(index: Int) {
         currentIndex = index
         _playerState.tryEmit(PlayerState.BUFFERING)
-        _currentMediaItem.tryEmit(currentPlaylist[index])
+        val item = currentPlaylist[index]
+        _currentMediaItem.tryEmit(item)
+        mediaSession.update(item, 0.0, item.duration.inWholeMilliseconds / 1000.0, false)
         pendingStartMs = 0L
         loadCurrentIntoEngineLocked(autoPlay = true)
     }
@@ -205,8 +207,12 @@ class SingleMediaAudioPlayer(
         pendingSkip = null
     }
 
-    /** Count each tap immediately and open only the last track of a fast sequence. */
+    /** Start an isolated skip immediately, coalescing commands while a load is opening. */
     private fun skipToIndexLocked(index: Int) {
+        if (pendingSkip == null && _playerState.value != PlayerState.BUFFERING) {
+            playIndexLocked(index)
+            return
+        }
         if (pendingSkip == null) {
             generation++
             engineHasMedia = false
@@ -224,7 +230,7 @@ class SingleMediaAudioPlayer(
 
         cancelPendingSkipLocked()
         pendingSkip = scope.launch {
-            delay(120)
+            delay(85)
             lock.withLock {
                 if (disposed || pendingSkip != coroutineContext[Job]) return@withLock
                 pendingSkip = null
@@ -319,8 +325,7 @@ class SingleMediaAudioPlayer(
             val rebuilt = if (enabled) {
                 if (currentItem != null) {
                     val remaining = originalPlaylist.toMutableList()
-                    val index = remaining.indexOfFirst { it === currentItem }.takeIf { it >= 0 }
-                        ?: remaining.indexOfFirst { it.url == currentItem.url }
+                    val index = remaining.indexOfOccurrence(currentItem)
                     if (index >= 0) remaining.removeAt(index)
                     listOf(currentItem) + remaining.shuffled()
                 } else {
@@ -337,8 +342,7 @@ class SingleMediaAudioPlayer(
             _playlist.tryEmit(currentPlaylist.toList())
 
             currentIndex = if (currentItem == null) 0 else {
-                currentPlaylist.indexOfFirst { it === currentItem }.takeIf { it >= 0 }
-                    ?: currentPlaylist.indexOfFirst { it.url == currentItem.url }.coerceAtLeast(0)
+                currentPlaylist.indexOfOccurrence(currentItem).coerceAtLeast(0)
             }
             _currentMediaItem.tryEmit(currentPlaylist.getOrNull(currentIndex))
         }
@@ -353,17 +357,24 @@ class SingleMediaAudioPlayer(
         if (currentUrls != expectedUrls &&
             (!shuffleEnabled || currentUrls.sorted() != expectedUrls.sorted())) return@withLock false
         val current = _currentMediaItem.value ?: return@withLock false
-        if (playlist.none { it.url == current.url }) return@withLock false
+        val originalIndex = originalPlaylist.indexOfOccurrence(current)
+        val occurrence = originalPlaylist.take(originalIndex.coerceAtLeast(0)).count { it.url == current.url }
+        val matchingIndices = playlist.indices.filter { playlist[it].url == current.url }
+        val selectedIndex = matchingIndices.getOrNull(occurrence) ?: matchingIndices.firstOrNull()
+            ?: return@withLock false
         originalPlaylist.clear()
         originalPlaylist.addAll(playlist)
-        val expanded = if (shuffleEnabled) {
-            val remaining = playlist.toMutableList()
-            remaining.removeAt(remaining.indexOfFirst { it.url == current.url })
-            listOf(current) + remaining.shuffled()
-        } else playlist
+        originalPlaylist[selectedIndex] = current
         currentPlaylist.clear()
-        currentPlaylist.addAll(expanded)
-        currentIndex = currentPlaylist.indexOfFirst { it.url == current.url }
+        if (shuffleEnabled) {
+            val remaining = originalPlaylist.toMutableList()
+            currentPlaylist.add(remaining.removeAt(selectedIndex))
+            currentPlaylist.addAll(remaining.shuffled())
+            currentIndex = 0
+        } else {
+            currentPlaylist.addAll(originalPlaylist)
+            currentIndex = selectedIndex
+        }
         // Do not touch engine, generation, position or playback state.
         _playlist.value = currentPlaylist.toList()
         // A very short seed may end before pagination finishes. Explicit pause/stop
@@ -377,7 +388,19 @@ class SingleMediaAudioPlayer(
     override suspend fun load(
         playlist: List<MediaItem>,
         autoPlay: Boolean,
-        startPosition: Int
+        startPosition: Int,
+    ) = loadPlaylist(playlist, autoPlay, startPosition, shuffle = false)
+
+    override suspend fun loadShuffled(playlist: List<MediaItem>, autoPlay: Boolean, startPosition: Int) =
+        loadPlaylist(playlist, autoPlay, startPosition, shuffle = true)
+
+    override suspend fun queueSnapshot(): PlaybackQueueSnapshot = lock.withLock {
+        val selected = currentPlaylist.getOrNull(currentIndex)
+        originalPlaylist.snapshotFor(selected, shuffleEnabled)
+    }
+
+    private suspend fun loadPlaylist(
+        playlist: List<MediaItem>, autoPlay: Boolean, startPosition: Int, shuffle: Boolean,
     ) {
         lock.withLock {
             if (disposed) return
@@ -387,12 +410,19 @@ class SingleMediaAudioPlayer(
             generation++
             originalPlaylist.addAll(playlist)
             currentPlaylist.clear()
-            currentPlaylist.addAll(playlist)
-            shuffleEnabled = false
-            _shuffleMode.tryEmit(false)
+            val selectedIndex = if (playlist.isEmpty()) -1 else startPosition.coerceIn(0, playlist.lastIndex)
+            shuffleEnabled = shuffle && selectedIndex >= 0
+            if (shuffleEnabled) {
+                val remaining = playlist.toMutableList()
+                currentPlaylist.add(remaining.removeAt(selectedIndex))
+                currentPlaylist.addAll(remaining.shuffled())
+            } else {
+                currentPlaylist.addAll(playlist)
+            }
+            _shuffleMode.tryEmit(shuffleEnabled)
             _playlist.tryEmit(currentPlaylist.toList())
 
-            engine.stop()
+            if (!autoPlay || currentPlaylist.isEmpty()) engine.stop()
             engineHasMedia = false
             pendingStartMs = 0L
             _position.tryEmit(Duration.ZERO)
@@ -407,7 +437,7 @@ class SingleMediaAudioPlayer(
                 return
             }
 
-            currentIndex = startPosition.coerceIn(0, currentPlaylist.lastIndex)
+            currentIndex = if (shuffleEnabled) 0 else selectedIndex
             _currentMediaItem.tryEmit(currentPlaylist[currentIndex])
             _duration.tryEmit(currentPlaylist[currentIndex].duration)
             mediaSession.update(
