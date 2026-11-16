@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +49,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 
 import org.spotube.spotube.core.ui.theming.AppearanceIllustration
+import org.spotube.spotube.core.ui.theming.AppearanceMotif
 import org.spotube.spotube.core.ui.theming.appearanceBackground
 import org.spotube.spotube.core.ui.theming.appearanceTransportSurface
 import org.spotube.spotube.core.ui.theming.isIllustrated
@@ -74,14 +76,18 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import org.spotube.plugin_interfaces.plugin_apis.lyrics.LyricsLine
 import org.spotube.spotube.core.audioplayer.AudioPlayerInterface
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.LoopState
@@ -91,6 +97,7 @@ import org.spotube.spotube.core.navigation.NavigationCommands
 import org.spotube.spotube.core.navigation.Routes
 import org.spotube.spotube.modules.lyrics.LyricsViewModel
 import org.spotube.spotube.modules.lyrics.SyncedLyricsList
+import org.spotube.spotube.modules.settings.AppearanceStyle
 import org.spotube.spotube.modules.saved_tracks.SAVED_TRACKS_COLLECTION_ID
 import org.spotube.spotube.modules.saved_tracks.SavedTracksViewModel
 import org.spotube.spotube.resources.iconsax.Iconsax
@@ -457,27 +464,13 @@ fun AppExpandedPlayer(
                 }
             }
 
-            if (illustratedMotion != null) {
-                val remainingHeight = if (controlsHeight > 0.dp) viewportHeight - controlsHeight else 0.dp
-                IllustratedPlayerScene(illustratedMotion, remainingHeight)
-            } else if (illustrated) {
-                AppearanceIllustration(
-                    appearance,
-                    modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 460.dp).clip(AppTheme.shapes.large),
-                )
-            }
-
-            LyricsPreviewCard(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .then(horizontalInsets)
-                    .padding(horizontal = 16.dp)
-                    .padding(bottom = 16.dp),
-                onExpand = onExpandLyrics
+            ExpandedPlayerFooter(
+                appearance = appearance,
+                illustratedMotion = illustratedMotion,
+                minSceneHeight = if (controlsHeight > 0.dp) viewportHeight - controlsHeight else 0.dp,
+                lyricsInsets = horizontalInsets,
+                onExpandLyrics = onExpandLyrics,
             )
-            if (illustratedMotion != null) {
-                Spacer(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)))
-            }
         }
 
         MillenniumSnackbarHost(
@@ -504,32 +497,83 @@ private fun rememberSharedAlbumArtModifier(
 }
 
 @Composable
-private fun LyricsPreviewCard(
-    modifier: Modifier = Modifier,
-    onExpand: () -> Unit,
-    viewModel: LyricsViewModel = koinViewModel()
+private fun ExpandedPlayerFooter(
+    appearance: AppearanceStyle,
+    illustratedMotion: IllustratedPlayerMotion?,
+    minSceneHeight: Dp,
+    lyricsInsets: Modifier,
+    onExpandLyrics: () -> Unit,
+    viewModel: LyricsViewModel = koinViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val syncedLyrics = uiState.syncedLyrics ?: emptyList()
-    val isLoading = uiState.isLoading
-    if (syncedLyrics.isEmpty() || isLoading) return
+    val lines = uiState.syncedLyrics.orEmpty()
+    val peek: (@Composable () -> Unit)? = if (!uiState.isLoading && lines.isNotEmpty()) {
+        {
+            LyricsPreviewCard(
+                lines = lines,
+                currentIndex = uiState.currentIndex,
+                onExpand = onExpandLyrics,
+                illustratedStyle = illustratedMotion?.art?.style,
+                modifier = Modifier.fillMaxWidth().then(lyricsInsets)
+                    .padding(horizontal = 16.dp)
+                    .padding(top = if (illustratedMotion != null) 8.dp else 0.dp, bottom = 16.dp),
+            )
+        }
+    } else null
+    if (illustratedMotion != null) {
+        val continuation: (@Composable () -> Unit)? = if (peek != null) {
+            {
+                Column {
+                    peek()
+                    Spacer(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)))
+                }
+            }
+        } else null
+        IllustratedPlayerScene(illustratedMotion, minSceneHeight, continuation)
+        if (continuation == null) {
+            Spacer(Modifier.windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Bottom)))
+        }
+    } else {
+        if (appearance.isIllustrated) {
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                AppearanceIllustration(
+                    appearance,
+                    modifier = Modifier.padding(horizontal = 16.dp).widthIn(max = 460.dp).clip(AppTheme.shapes.large),
+                )
+            }
+        }
+        peek?.invoke()
+    }
+}
 
-    MillenniumCard(
-        modifier = modifier.clickable(onClick = onExpand),
-        contentPadding = PaddingValues(12.dp),
-        contentSpacing = 8.dp,
-        shadowElevation = 2.dp
-    ) {
+@Composable
+internal fun LyricsPreviewCard(
+    lines: List<LyricsLine>,
+    currentIndex: Int,
+    onExpand: () -> Unit,
+    modifier: Modifier = Modifier,
+    illustratedStyle: AppearanceStyle? = null,
+) {
+    val cardModifier = modifier.clickable(onClick = onExpand)
+    val content: @Composable ColumnScope.() -> Unit = {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = stringResource(Res.string.player_lyrics),
-                style = AppTheme.typography.labelMedium,
-                color = MillenniumTheme.colors.muted
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (illustratedStyle != null) {
+                    AppearanceMotif(illustratedStyle, AppTheme.colors.primary, Modifier.size(17.dp))
+                }
+                Text(
+                    text = stringResource(Res.string.player_lyrics),
+                    style = AppTheme.typography.labelMedium,
+                    color = MillenniumTheme.colors.muted,
+                )
+            }
             MillenniumIconButton(
                 modifier = Modifier.playerPressFeedback(),
                 onClick = onExpand,
@@ -545,11 +589,33 @@ private fun LyricsPreviewCard(
 
         // Passive preview: no onLineClick, so lines never seek playback.
         SyncedLyricsList(
-            lines = syncedLyrics,
-            currentIndex = uiState.currentIndex,
+            lines = lines,
+            currentIndex = currentIndex,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(120.dp)
+        )
+    }
+    if (illustratedStyle != null) {
+        val colors = AppTheme.colors
+        MillenniumCard(
+            modifier = cardModifier,
+            contentPadding = PaddingValues(12.dp),
+            contentSpacing = 8.dp,
+            shape = AppTheme.shapes.large,
+            background = SolidColor(colors.surface.copy(alpha = .96f)),
+            borderColor = lerp(colors.outline, colors.primary, .30f),
+            borderWidth = 1.dp,
+            shadowElevation = 0.dp,
+            content = content,
+        )
+    } else {
+        MillenniumCard(
+            modifier = cardModifier,
+            contentPadding = PaddingValues(12.dp),
+            contentSpacing = 8.dp,
+            shadowElevation = 2.dp,
+            content = content,
         )
     }
 }

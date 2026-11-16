@@ -30,6 +30,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
@@ -43,28 +44,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.currentStateAsState
 import org.jetbrains.compose.resources.DrawableResource
+import org.jetbrains.compose.resources.imageResource
 import org.jetbrains.compose.resources.painterResource
+import org.spotube.spotube.core.ui.theming.AppTheme
 import org.spotube.spotube.modules.settings.AppearanceStyle
 import spotube.composeapp.generated.resources.Res
 import spotube.composeapp.generated.resources.player_berry
@@ -81,6 +89,7 @@ import spotube.composeapp.generated.resources.player_frog_rest
 import spotube.composeapp.generated.resources.player_pond_scene
 import kotlin.math.PI
 import kotlin.math.max
+import kotlin.math.roundToInt
 import kotlin.math.sin
 
 internal data class IllustratedPlayerArt(
@@ -142,21 +151,71 @@ internal fun IllustratedPlayerPeek(motion: IllustratedPlayerMotion) {
 }
 
 @Composable
-internal fun IllustratedPlayerScene(motion: IllustratedPlayerMotion, minHeight: Dp) {
+internal fun IllustratedPlayerScene(
+    motion: IllustratedPlayerMotion,
+    minHeight: Dp,
+    continuation: (@Composable () -> Unit)? = null,
+) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
         val height = maxOf(minHeight, (maxWidth * .46f).coerceIn(140.dp, 248.dp))
-        val painter = painterResource(motion.art.scene)
+        val artwork = imageResource(motion.art.scene)
+        val painter = remember(artwork) { BitmapPainter(artwork) }
         val artHeight = if (motion.art.style == AppearanceStyle.STRAWBERRIES) {
             maxWidth / painter.aspectRatio
         } else height
-        Box(Modifier.fillMaxWidth().height(maxOf(height, artHeight))) {
-            Image(
-                painter = painter,
-                contentDescription = null,
-                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(artHeight)
-                    .onGloballyPositioned { motion.sceneBounds = it.illustrationBounds() },
-                contentScale = ContentScale.FillBounds,
-            )
+        Column(Modifier.fillMaxWidth()) {
+            Box(Modifier.fillMaxWidth().height(maxOf(height, artHeight))) {
+                Image(
+                    painter = painter,
+                    contentDescription = null,
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(artHeight)
+                        .onGloballyPositioned { motion.sceneBounds = it.illustrationBounds() },
+                    contentScale = ContentScale.FillBounds,
+                )
+            }
+            if (continuation != null) {
+                val page = AppTheme.colors.background
+                Box(
+                    Modifier.fillMaxWidth().drawWithCache {
+                        val sourceHeight = (artwork.height * .38f).roundToInt().coerceAtLeast(1)
+                        val sourceOffset = IntOffset(0, artwork.height - sourceHeight)
+                        val sourceSize = IntSize(artwork.width, sourceHeight)
+                        val stripHeight = (artHeight.toPx() * sourceHeight / artwork.height)
+                            .roundToInt().coerceAtLeast(1)
+                        val stripSize = IntSize(size.width.roundToInt(), stripHeight)
+                        val strips = (size.height.roundToInt() + stripHeight - 1) / stripHeight
+                        val shade = Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            .30f to page.copy(alpha = .38f),
+                            .90f to page.copy(alpha = .78f),
+                            1f to page,
+                            endY = size.height,
+                        )
+                        onDrawBehind {
+                            // Mirror the lower texture so each join uses the same row of pixels.
+                            // Keep the strip at the scale it had above the lyrics.
+                            clipRect {
+                                repeat(strips) { index ->
+                                    val y = index * stripHeight
+                                    scale(1f, if (index % 2 == 0) -1f else 1f,
+                                        pivot = Offset(0f, y + stripHeight / 2f)) {
+                                        drawImage(
+                                            image = artwork,
+                                            srcOffset = sourceOffset,
+                                            srcSize = sourceSize,
+                                            dstOffset = IntOffset(0, y),
+                                            dstSize = stripSize,
+                                        )
+                                    }
+                                }
+                            }
+                            drawRect(shade)
+                        }
+                    }
+                ) {
+                    continuation()
+                }
+            }
         }
     }
 }

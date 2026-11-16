@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -42,6 +43,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import org.spotube.plugin_interfaces.plugin_apis.lyrics.LyricsLine
+import org.spotube.spotube.core.ui.theming.AppTheme
 import org.spotube.spotube.core.navigation.Navigator
 import org.spotube.spotube.core.navigation.Routes
 import org.spotube.spotube.core.navigation.TOP_LEVEL_ROUTES
@@ -215,6 +218,64 @@ class IllustratedPlayerTest {
                 pointer(PointerEventType.Release, Offset(width / 2f, height - 110f))
                 step(110)
                 assertNoPageAtLowerEdges(screenshot("collapsed"), background.value.toArgb(), label = style.name)
+            }
+        }
+    }
+
+    @Test
+    fun lyricsFrameContinuesTheSceneAtBothSidesAndUnderTheCard() {
+        val lines = listOf(
+            LyricsLine(0L, "The room is quiet now"),
+            LyricsLine(500L, "And the evening settles in"),
+            LyricsLine(1000L, "We follow the music"),
+        )
+        val output = File("build/reports/animated-player").apply { mkdirs() }
+        val sampleWidth = 390
+        val themes = listOf(
+            AppearanceStyle.TORMENTIL to Theme.DARK,
+            AppearanceStyle.BLUE_POND to Theme.DARK,
+            AppearanceStyle.STRAWBERRIES to Theme.LIGHT,
+        )
+        for ((style, theme) in themes) {
+            val motion = IllustratedPlayerMotion(assertNotNull(style.illustratedPlayerArt()),
+                progress = { 1f }, sheetOffset = { 0f }, expanded = { true })
+            var background = 0
+            ImageComposeScene(sampleWidth, 418) {
+                SpotubeTheme(UserSettings(theme = theme, appearanceStyle = style)) {
+                    val canvas = AppTheme.colors.background
+                    background = canvas.toArgb()
+                    Column(Modifier.fillMaxSize().background(canvas)) {
+                        IllustratedPlayerScene(motion, 160.dp) {
+                            LyricsPreviewCard(
+                                lines = lines,
+                                currentIndex = 1,
+                                onExpand = {},
+                                illustratedStyle = style,
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                                    .padding(top = 8.dp, bottom = 20.dp),
+                            )
+                        }
+                    }
+                }
+            }.use { scene ->
+                repeat(36) { scene.render(it * 16_000_000L).close() }
+                val png = scene.render(600_000_000L).use { image ->
+                    assertNotNull(image.encodeToData()).use { it.bytes }
+                }
+                output.resolve("${style.name.lowercase()}-lyrics.png").writeBytes(png)
+                val image = ImageIO.read(ByteArrayInputStream(png))
+                val seam = motion.sceneBounds.bottom.toInt()
+                for (x in listOf(4, 10, sampleWidth - 11, sampleWidth - 5)) {
+                    val before = image.getRGB(x, seam - 1)
+                    val after = image.getRGB(x, seam)
+                    val delta = listOf(0, 8, 16).maxOf { shift ->
+                        abs(((before shr shift) and 255) - ((after shr shift) and 255))
+                    }
+                    assertTrue(delta <= 16, "${style.name} scene changes abruptly at the lyrics seam")
+                    assertTrue(image.getRGB(x, seam + 96) != background, "Art should appear at the card's sides")
+                }
+                assertTrue(image.getRGB(sampleWidth / 2, seam + 215) != background,
+                    "${style.name} art should continue below the lyrics card")
             }
         }
     }
