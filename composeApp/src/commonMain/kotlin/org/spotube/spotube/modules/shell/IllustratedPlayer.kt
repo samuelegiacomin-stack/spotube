@@ -101,6 +101,19 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
+private const val MascotFramesPerSecond = 24
+private const val MascotSheetColumns = 8
+
+internal data class IllustratedMascotFrames(
+    val resource: DrawableResource,
+    val idleCount: Int,
+    val reactionCount: Int,
+) {
+    val count get() = idleCount + reactionCount
+    val idleMillis get() = idleCount * 1_000 / MascotFramesPerSecond
+    val reactionMillis get() = reactionCount * 1_000 / MascotFramesPerSecond
+}
+
 internal data class IllustratedPlayerArt(
     val style: AppearanceStyle,
     val scene: DrawableResource,
@@ -108,7 +121,7 @@ internal data class IllustratedPlayerArt(
     val hanging: DrawableResource,
     val rest: DrawableResource,
     val arrival: DrawableResource? = null,
-    val frames: DrawableResource? = null,
+    val frames: IllustratedMascotFrames? = null,
     val landingX: Float = .72f,
     val landingY: Float,
     val hangingHeight: Dp,
@@ -121,12 +134,14 @@ internal data class IllustratedPlayerArt(
 internal fun AppearanceStyle.illustratedPlayerArt(): IllustratedPlayerArt? = when (this) {
     AppearanceStyle.TORMENTIL -> IllustratedPlayerArt(
         this, Res.drawable.player_forest_scene, Res.drawable.player_fox_peek, Res.drawable.player_fox_hang,
-        Res.drawable.player_fox_rest, Res.drawable.player_fox_sit, Res.drawable.player_fox_frames,
+        Res.drawable.player_fox_rest, Res.drawable.player_fox_sit,
+        frames = IllustratedMascotFrames(Res.drawable.player_fox_frames, idleCount = 60, reactionCount = 48),
         landingX = .74f, landingY = .89f, hangingHeight = 150.dp, restWidthFraction = .37f,
     )
     AppearanceStyle.BLUE_POND -> IllustratedPlayerArt(
         this, Res.drawable.player_pond_scene, Res.drawable.player_frog_peek, Res.drawable.player_frog_hang,
-        Res.drawable.player_frog_rest, Res.drawable.player_frog_jump, Res.drawable.player_frog_frames,
+        Res.drawable.player_frog_rest, Res.drawable.player_frog_jump,
+        frames = IllustratedMascotFrames(Res.drawable.player_frog_frames, idleCount = 24, reactionCount = 24),
         landingX = .64f, landingY = .75f, hangingHeight = 98.dp, restWidthFraction = .23f,
         jumpHeight = 32.dp, ripple = Color(0xFF85C8D6),
     )
@@ -267,12 +282,15 @@ internal fun IllustratedPlayerOverlay(
     val hanging = painterResource(art.hanging)
     val rest = painterResource(art.rest)
     val arrival = art.arrival?.let { painterResource(it) } ?: rest
-    val restFrames = art.frames?.let { resource ->
-        val bitmap = imageResource(resource)
-        remember(bitmap) {
-            val tile = IntSize(bitmap.width / 3, bitmap.height / 2)
-            List(6) { index ->
-                BitmapPainter(bitmap, IntOffset(index % 3 * tile.width, index / 3 * tile.height), tile)
+    val frameSequence = art.frames
+    val restFrames = frameSequence?.let { frames ->
+        val bitmap = imageResource(frames.resource)
+        remember(bitmap, frames) {
+            val rows = (frames.count + MascotSheetColumns - 1) / MascotSheetColumns
+            val tile = IntSize(bitmap.width / MascotSheetColumns, bitmap.height / rows)
+            List(frames.count) { index ->
+                val offset = IntOffset(index % MascotSheetColumns * tile.width, index / MascotSheetColumns * tile.height)
+                BitmapPainter(bitmap, offset, tile)
             }
         }
     }
@@ -311,34 +329,25 @@ internal fun IllustratedPlayerOverlay(
             lastReaction = request
             reaction.snapTo(0f)
             reaction.animateTo(
-                1f, tween(if (isFox) 1760 else if (isBerry) 1480 else 820, easing = LinearEasing)
+                1f, tween(frameSequence?.reactionMillis ?: 1480, easing = LinearEasing)
             )
         }
     }
-    val idleMotion = if (canAnimate && restFrames != null) {
+    val idleMotion = if (canAnimate && frameSequence != null) {
         val transition = rememberInfiniteTransition(label = "Resting mascot")
         val animation = if (isFrog) {
             infiniteRepeatable(keyframes {
-                durationMillis = 4200
-                0f at 390
-                1f at 730
-                .86f at 870
-                0f at 1200
-                0f at 2230
-                .76f at 2450
-                0f at 2730
-                0f at 4200
+                val pulseStart = 850
+                val pulseEnd = pulseStart + frameSequence.idleMillis
+                durationMillis = pulseEnd + 1500
+                0f at pulseStart using LinearEasing
+                1f at pulseEnd
+                0f at (pulseEnd + 1)
             })
-        } else infiniteRepeatable(keyframes {
-            durationMillis = 3900
-            0f at 0
-            .95f at 1120
-            1.8f at 2390
-            0f at 3900
-        })
+        } else infiniteRepeatable(tween(frameSequence.idleMillis, easing = LinearEasing))
         transition.animateFloat(
             initialValue = 0f,
-            targetValue = 0f,
+            targetValue = if (isFrog) 0f else 1f,
             animationSpec = animation,
             label = "Idle pose",
         )
@@ -413,19 +422,10 @@ internal fun IllustratedPlayerOverlay(
         } else {
             val squash = 1f - .19f * sin(PI.toFloat() * ((elapsed - .58f) / .14f).coerceIn(0f, 1f))
             if (settle < 1f) paintPose(arrival, restX, groundY, arrivalHeight * squash, 1f - settle)
-            if (restFrames != null) {
-                val frame = if (reaction.value < 1f) {
-                    when {
-                        reaction.value < .16f -> 0
-                        reaction.value < .36f -> 3
-                        reaction.value < .62f -> 4
-                        reaction.value < .90f -> 5
-                        else -> 0
-                    }
-                } else {
-                    val idle = idleMotion?.value ?: 0f
-                    if (isFrog) (idle * 2f).roundToInt() else idle.roundToInt()
-                }
+            if (restFrames != null && frameSequence != null) {
+                val phase = reaction.value
+                val frame = if (phase < 1f) frameSequence.idleCount + frameAt(phase, frameSequence.reactionCount)
+                    else frameAt(idleMotion?.value ?: 0f, frameSequence.idleCount)
                 val pose = restFrames[frame]
                 val frameWidth = restWidth * if (isFrog) 1.14f else 1.10f
                 val frameCenter = restX - if (isFrog) frameWidth * .014f else frameWidth * .02f
@@ -434,6 +434,9 @@ internal fun IllustratedPlayerOverlay(
         }
     }
 }
+
+private fun frameAt(phase: Float, count: Int): Int =
+    (phase * count).toInt().coerceIn(0, count - 1)
 
 private fun LayoutCoordinates.illustrationBounds() =
     Rect(positionInRoot(), Size(size.width.toFloat(), size.height.toFloat()))
