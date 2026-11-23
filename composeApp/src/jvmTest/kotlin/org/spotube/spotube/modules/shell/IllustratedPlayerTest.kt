@@ -255,6 +255,20 @@ class IllustratedPlayerTest {
 
                 pointer(PointerEventType.Press, Offset(width / 2f, 45f))
                 step(3)
+                for (dragY in listOf(160f, 390f)) {
+                    pointer(PointerEventType.Move, Offset(width / 2f, dragY))
+                    step(5)
+                    assertTrue(motion.settledExpanded(), "A downward drag should keep the mascot in its scene")
+                    val closing = screenshot("closing-${dragY.toInt()}")
+                    val pageColor = background.value.toArgb()
+                    val edge = assertNotNull((20 until height - 105).firstOrNull { y ->
+                        closing.getRGB(5, y) != pageColor
+                    })
+                    for (y in edge - 6 until edge - 1) {
+                        assertTrue((gripX - 18..gripX + 18).all { x -> closing.getRGB(x, y) == pageColor },
+                            "${style.name} should never grab the lip during a downward drag")
+                    }
+                }
                 pointer(PointerEventType.Move, Offset(width / 2f, height - 110f))
                 step(6)
                 pointer(PointerEventType.Release, Offset(width / 2f, height - 110f))

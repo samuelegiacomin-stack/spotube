@@ -383,9 +383,12 @@ internal fun CompactPlayerOverlay(
     }
     val illustratedMotion = remember(illustratedArt, sheetState) {
         illustratedArt?.let { art ->
-            IllustratedPlayerMotion(art, progress = { progress }) {
-                sheetState.isIdle && sheetState.currentDetent == SheetDetent.FullyExpanded
-            }
+            IllustratedPlayerMotion(
+                art,
+                progress = { progress },
+                expanded = { sheetState.isIdle && sheetState.currentDetent == SheetDetent.FullyExpanded },
+                settledExpanded = { sheetState.currentDetent == SheetDetent.FullyExpanded },
+            )
         }
     }
     // Once shown, keep the expanded player composed: composing it (view models, lyrics, cover

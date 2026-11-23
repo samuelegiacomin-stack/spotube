@@ -158,6 +158,7 @@ internal class IllustratedPlayerMotion(
     val art: IllustratedPlayerArt,
     val progress: () -> Float,
     val expanded: () -> Boolean,
+    val settledExpanded: () -> Boolean = expanded,
 ) {
     var sheetTopInRoot by mutableStateOf(Float.NaN)
     var sceneBounds by mutableStateOf(Rect.Zero)
@@ -298,11 +299,14 @@ internal fun IllustratedPlayerOverlay(
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val inForeground = lifecycle.isAtLeast(Lifecycle.State.STARTED)
     val expanded by remember(motion) { derivedStateOf(motion.expanded) }
+    // The settled detent remains expanded during a downward drag, even when the
+    // sheet is no longer idle. Keep the character in its scene until the player closes.
+    val keepMascotInScene by remember(motion) { derivedStateOf(motion.settledExpanded) }
     val time = remember(motion) { Animatable(0f) }
-    LaunchedEffect(motion, expanded, reduceMotion, inForeground) {
-        if (!expanded) {
+    LaunchedEffect(motion, keepMascotInScene, expanded, reduceMotion, inForeground) {
+        if (!keepMascotInScene) {
             time.snapTo(0f)
-        } else if (reduceMotion || !inForeground) {
+        } else if (!expanded || reduceMotion || !inForeground) {
             time.snapTo(1f)
         } else if (time.value < 1f) {
             time.animateTo(1f, tween(durationMillis = if (isBerry) 1800 else 1040, easing = LinearEasing))
@@ -368,20 +372,22 @@ internal fun IllustratedPlayerOverlay(
                 else peekBounds.bottom - viewport.top + 3.dp.toPx()
             val peekHeight = minOf(peekBounds.height, peekBounds.width / peek.aspectRatio)
             paintPose(peek, gripX, peekBottom, peekHeight, 1f - lift)
-            if (lift > 0f && !reduceMotion && gripY.isFinite()) {
-                val descent = peekHeight + (hangingHeight - peekHeight) * lift
-                paintPose(hanging, gripX, gripY + descent, descent, lift)
+            if (!keepMascotInScene) {
+                if (lift > 0f && !reduceMotion && gripY.isFinite()) {
+                    val descent = peekHeight + (hangingHeight - peekHeight) * lift
+                    paintPose(hanging, gripX, gripY + descent, descent, lift)
+                }
+                return@Canvas
             }
-            return@Canvas
         }
         val scene = motion.sceneBounds
-        if (scene.height <= 0f || !gripY.isFinite()) return@Canvas
+        if (scene.height <= 0f || scene.top >= viewport.bottom || !gripY.isFinite()) return@Canvas
         val restX = scene.left - viewport.left + scene.width * art.landingX
         val groundY = scene.top - viewport.top + scene.height * art.landingY
         val restWidth = scene.width.coerceAtMost(520.dp.toPx()) * art.restWidthFraction
         val restHeight = restWidth / rest.aspectRatio
         val arrivalHeight = if (isFox) restHeight * 1.28f else restHeight
-        val elapsed = if (reduceMotion) 1f else time.value
+        val elapsed = if (!expanded || reduceMotion) 1f else time.value
         val impact = if (isBerry) .40f else .58f
         val drop = (elapsed / impact).coerceIn(0f, 1f)
         val settle = ((elapsed - .72f) / .28f).coerceIn(0f, 1f)
