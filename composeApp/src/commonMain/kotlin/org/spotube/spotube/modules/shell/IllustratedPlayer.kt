@@ -135,7 +135,7 @@ internal fun AppearanceStyle.illustratedPlayerArt(): IllustratedPlayerArt? = whe
     AppearanceStyle.TORMENTIL -> IllustratedPlayerArt(
         this, Res.drawable.player_forest_scene, Res.drawable.player_fox_peek, Res.drawable.player_fox_hang,
         Res.drawable.player_fox_rest, Res.drawable.player_fox_sit,
-        frames = IllustratedMascotFrames(Res.drawable.player_fox_frames, idleCount = 60, reactionCount = 48),
+        frames = IllustratedMascotFrames(Res.drawable.player_fox_frames, idleCount = 60, reactionCount = 64),
         landingX = .74f, landingY = .89f, hangingHeight = 150.dp, restWidthFraction = .37f,
     )
     AppearanceStyle.BLUE_POND -> IllustratedPlayerArt(
@@ -428,7 +428,7 @@ internal fun IllustratedPlayerOverlay(
         } else {
             val squash = 1f - .19f * sin(PI.toFloat() * ((elapsed - .58f) / .14f).coerceIn(0f, 1f))
             if (settle < 1f) paintPose(arrival, restX, groundY, arrivalHeight * squash, 1f - settle)
-            if (restFrames != null && frameSequence != null) {
+            if (restFrames != null) {
                 val phase = reaction.value
                 val frame = if (phase < 1f) frameSequence.idleCount + frameAt(phase, frameSequence.reactionCount)
                     else frameAt(idleMotion?.value ?: 0f, frameSequence.idleCount)
