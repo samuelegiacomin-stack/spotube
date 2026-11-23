@@ -13,10 +13,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.composeunstyled.Text
 import org.spotube.spotube.core.ui.component.ApplicationMainBar
+import org.spotube.spotube.core.jam.JamRole
+import org.spotube.spotube.core.jam.JamRoomService
+import org.koin.compose.koinInject
 
 @Composable
 fun LocalFolderScreen(viewModel: LocalFolderViewModel, onBack: () -> Unit) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val jam = koinInject<JamRoomService>()
+    val role by jam.role.collectAsStateWithLifecycle()
     Column {
         ApplicationMainBar(
             backButton = true,
@@ -29,6 +34,7 @@ fun LocalFolderScreen(viewModel: LocalFolderViewModel, onBack: () -> Unit) {
             onNavigateUp = onBack,
             onPlayFolder = viewModel::playFolder,
             onRequestPermission = {},
+            onQueueTrack = if (role == JamRole.Guest) null else viewModel::queueTrack,
             modifier = Modifier.padding(horizontal = 12.dp)
         )
     }

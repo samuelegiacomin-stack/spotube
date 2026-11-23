@@ -20,7 +20,6 @@ package org.spotube.spotube.modules.shell
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
@@ -28,16 +27,20 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -50,7 +53,6 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -62,6 +64,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -72,6 +77,7 @@ import androidx.lifecycle.compose.currentStateAsState
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.imageResource
 import org.jetbrains.compose.resources.painterResource
+import org.jetbrains.compose.resources.stringResource
 import org.spotube.spotube.core.ui.theming.AppTheme
 import org.spotube.spotube.modules.settings.AppearanceStyle
 import spotube.composeapp.generated.resources.Res
@@ -79,14 +85,17 @@ import spotube.composeapp.generated.resources.player_berry
 import spotube.composeapp.generated.resources.player_berry_scene
 import spotube.composeapp.generated.resources.player_forest_scene
 import spotube.composeapp.generated.resources.player_fox_hang
+import spotube.composeapp.generated.resources.player_fox_frames
 import spotube.composeapp.generated.resources.player_fox_peek
 import spotube.composeapp.generated.resources.player_fox_rest
 import spotube.composeapp.generated.resources.player_fox_sit
 import spotube.composeapp.generated.resources.player_frog_hang
+import spotube.composeapp.generated.resources.player_frog_frames
 import spotube.composeapp.generated.resources.player_frog_jump
 import spotube.composeapp.generated.resources.player_frog_peek
 import spotube.composeapp.generated.resources.player_frog_rest
 import spotube.composeapp.generated.resources.player_pond_scene
+import spotube.composeapp.generated.resources.player_mascot_react
 import kotlin.math.PI
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -99,6 +108,7 @@ internal data class IllustratedPlayerArt(
     val hanging: DrawableResource,
     val rest: DrawableResource,
     val arrival: DrawableResource? = null,
+    val frames: DrawableResource? = null,
     val landingX: Float = .72f,
     val landingY: Float,
     val hangingHeight: Dp,
@@ -111,12 +121,12 @@ internal data class IllustratedPlayerArt(
 internal fun AppearanceStyle.illustratedPlayerArt(): IllustratedPlayerArt? = when (this) {
     AppearanceStyle.TORMENTIL -> IllustratedPlayerArt(
         this, Res.drawable.player_forest_scene, Res.drawable.player_fox_peek, Res.drawable.player_fox_hang,
-        Res.drawable.player_fox_rest, Res.drawable.player_fox_sit,
+        Res.drawable.player_fox_rest, Res.drawable.player_fox_sit, Res.drawable.player_fox_frames,
         landingX = .74f, landingY = .89f, hangingHeight = 150.dp, restWidthFraction = .37f,
     )
     AppearanceStyle.BLUE_POND -> IllustratedPlayerArt(
         this, Res.drawable.player_pond_scene, Res.drawable.player_frog_peek, Res.drawable.player_frog_hang,
-        Res.drawable.player_frog_rest, Res.drawable.player_frog_jump,
+        Res.drawable.player_frog_rest, Res.drawable.player_frog_jump, Res.drawable.player_frog_frames,
         landingX = .64f, landingY = .75f, hangingHeight = 98.dp, restWidthFraction = .23f,
         jumpHeight = 32.dp, ripple = Color(0xFF85C8D6),
     )
@@ -137,6 +147,7 @@ internal class IllustratedPlayerMotion(
     var sheetTopInRoot by mutableStateOf(Float.NaN)
     var sceneBounds by mutableStateOf(Rect.Zero)
     var peekBounds by mutableStateOf(Rect.Zero)
+    var reactionRequests by mutableIntStateOf(0)
 }
 
 internal val LocalIllustratedPlayer = staticCompositionLocalOf<IllustratedPlayerMotion?> { null }
@@ -157,11 +168,12 @@ internal fun IllustratedPlayerScene(
     continuation: (@Composable () -> Unit)? = null,
 ) {
     BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-        val height = maxOf(minHeight, (maxWidth * .46f).coerceIn(140.dp, 248.dp))
+        val width = maxWidth
+        val height = maxOf(minHeight, (width * .46f).coerceIn(140.dp, 248.dp))
         val artwork = imageResource(motion.art.scene)
         val painter = remember(artwork) { BitmapPainter(artwork) }
         val artHeight = if (motion.art.style == AppearanceStyle.STRAWBERRIES) {
-            maxWidth / painter.aspectRatio
+            width / painter.aspectRatio
         } else height
         Column(Modifier.fillMaxWidth()) {
             Box(Modifier.fillMaxWidth().height(maxOf(height, artHeight))) {
@@ -172,6 +184,27 @@ internal fun IllustratedPlayerScene(
                         .onGloballyPositioned { motion.sceneBounds = it.illustrationBounds() },
                     contentScale = ContentScale.FillBounds,
                 )
+                if (!rememberReducePlayerMotion()) {
+                    val art = motion.art
+                    val label = stringResource(Res.string.player_mascot_react)
+                    val hitWidth = width.coerceAtMost(520.dp) * art.restWidthFraction + 12.dp
+                    val hitHeight = (hitWidth * .9f).coerceAtLeast(44.dp)
+                    Box(
+                        Modifier.align(Alignment.TopStart)
+                            .offset(
+                                x = width * art.landingX - hitWidth / 2,
+                                y = maxOf(height, artHeight) - artHeight * (1f - art.landingY) - hitHeight,
+                            )
+                            .size(hitWidth, hitHeight)
+                            .semantics { contentDescription = label }
+                            .clickable(
+                                enabled = motion.expanded(),
+                                role = Role.Button,
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                            ) { motion.reactionRequests++ },
+                    )
+                }
             }
             if (continuation != null) {
                 val page = AppTheme.colors.background
@@ -234,6 +267,15 @@ internal fun IllustratedPlayerOverlay(
     val hanging = painterResource(art.hanging)
     val rest = painterResource(art.rest)
     val arrival = art.arrival?.let { painterResource(it) } ?: rest
+    val restFrames = art.frames?.let { resource ->
+        val bitmap = imageResource(resource)
+        remember(bitmap) {
+            val tile = IntSize(bitmap.width / 3, bitmap.height / 2)
+            List(6) { index ->
+                BitmapPainter(bitmap, IntOffset(index % 3 * tile.width, index / 3 * tile.height), tile)
+            }
+        }
+    }
     val reduceMotion = rememberReducePlayerMotion()
     val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
     val inForeground = lifecycle.isAtLeast(Lifecycle.State.STARTED)
@@ -256,7 +298,24 @@ internal fun IllustratedPlayerOverlay(
         }
     }
     val landed by remember(time) { derivedStateOf { time.value == 1f } }
-    val idleMotion = if (expanded && sceneVisible && inForeground && !reduceMotion && landed && (isFrog || isFox)) {
+    val sceneActive = expanded && sceneVisible && inForeground && !reduceMotion
+    val canAnimate = sceneActive && landed
+    val reaction = remember(motion) { Animatable(1f) }
+    val request = motion.reactionRequests
+    var lastReaction by remember(motion) { mutableIntStateOf(0) }
+    LaunchedEffect(motion, sceneActive, canAnimate, request) {
+        if (!canAnimate) {
+            if (!sceneActive) lastReaction = request
+            reaction.snapTo(1f)
+        } else if (request != lastReaction) {
+            lastReaction = request
+            reaction.snapTo(0f)
+            reaction.animateTo(
+                1f, tween(if (isFox) 1760 else if (isBerry) 1480 else 820, easing = LinearEasing)
+            )
+        }
+    }
+    val idleMotion = if (canAnimate && restFrames != null) {
         val transition = rememberInfiniteTransition(label = "Resting mascot")
         val animation = if (isFrog) {
             infiniteRepeatable(keyframes {
@@ -270,10 +329,16 @@ internal fun IllustratedPlayerOverlay(
                 0f at 2730
                 0f at 4200
             })
-        } else infiniteRepeatable(tween<Float>(1550), RepeatMode.Reverse)
+        } else infiniteRepeatable(keyframes {
+            durationMillis = 3900
+            0f at 0
+            .95f at 1120
+            1.8f at 2390
+            0f at 3900
+        })
         transition.animateFloat(
             initialValue = 0f,
-            targetValue = if (isFrog) 0f else 1f,
+            targetValue = 0f,
             animationSpec = animation,
             label = "Idle pose",
         )
@@ -328,22 +393,43 @@ internal fun IllustratedPlayerOverlay(
             paintPose(hanging, x, y, poseHeight, 1f - changePose)
             paintPose(arrival, x, y, poseHeight, changePose)
         } else if (isBerry) {
-            val dive = ((elapsed - impact) / .16f).coerceIn(0f, 1f)
-            val surface = ((elapsed - .61f) / .39f).coerceIn(0f, 1f)
+            val touched = reaction.value < 1f
+            val splashTime = if (touched) reaction.value else elapsed
+            val diveStart = if (touched) .12f else impact
+            val surfaceStart = if (touched) .42f else .61f
+            val dive = ((splashTime - diveStart) / .16f).coerceIn(0f, 1f)
+            val surface = ((splashTime - surfaceStart) / (1f - surfaceStart)).coerceIn(0f, 1f)
             val rise = surface * surface * (3f - 2f * surface)
             val submerged = (dive - rise).coerceIn(0f, 1f)
+            if (touched) {
+                val ripple = ((splashTime - .16f) / .44f).coerceIn(0f, 1f)
+                if (ripple > 0f && ripple < 1f) {
+                    drawLandingRipple(Offset(restX, groundY), restWidth, ripple, art.ripple, art.splash)
+                }
+            }
             clipRect(bottom = groundY - restHeight * .06f) {
                 paintPose(rest, restX, groundY + restHeight * submerged, restHeight, 1f)
             }
         } else {
             val squash = 1f - .19f * sin(PI.toFloat() * ((elapsed - .58f) / .14f).coerceIn(0f, 1f))
             if (settle < 1f) paintPose(arrival, restX, groundY, arrivalHeight * squash, 1f - settle)
-            val idle = idleMotion?.value ?: 0f
-            if (isFrog && idle > 0f) {
-                paintCroakingFrog(rest, restX, groundY, restWidth, restHeight, idle)
-            } else {
-                val breathScale = if (isFox) 1f + idle * .045f else 1f
-                paintPose(rest, restX, groundY, restHeight * breathScale * squash, settle)
+            if (restFrames != null) {
+                val frame = if (reaction.value < 1f) {
+                    when {
+                        reaction.value < .16f -> 0
+                        reaction.value < .36f -> 3
+                        reaction.value < .62f -> 4
+                        reaction.value < .90f -> 5
+                        else -> 0
+                    }
+                } else {
+                    val idle = idleMotion?.value ?: 0f
+                    if (isFrog) (idle * 2f).roundToInt() else idle.roundToInt()
+                }
+                val pose = restFrames[frame]
+                val frameWidth = restWidth * if (isFrog) 1.14f else 1.10f
+                val frameCenter = restX - if (isFrog) frameWidth * .014f else frameWidth * .02f
+                paintPose(pose, frameCenter, groundY + 3.dp.toPx(), frameWidth / pose.aspectRatio, settle)
             }
         }
     }
@@ -360,35 +446,6 @@ private fun DrawScope.paintPose(painter: Painter, x: Float, ground: Float, heigh
     val width = height * painter.aspectRatio
     translate(left = x - width / 2f, top = ground - height) {
         with(painter) { draw(Size(width, height), alpha = alpha) }
-    }
-}
-
-private fun DrawScope.paintCroakingFrog(
-    painter: Painter, x: Float, ground: Float, width: Float, height: Float, strength: Float,
-) {
-    // Warp the cream throat in the resting pose. The eye, outline of the back and feet
-    // retain their original position. The right edge of each band stays anchored to the chest.
-    val throatTop = height * .30f
-    val throatBottom = height * .77f
-    val throatRight = width * .47f
-    val clipLeft = -width * .15f
-    val bands = 14
-    val bandHeight = (throatBottom - throatTop) / bands
-    val poseSize = Size(width, height)
-    translate(x - width / 2f, ground - height) {
-        clipRect(clipLeft, throatTop, throatRight, throatBottom, ClipOp.Difference) {
-            with(painter) { draw(poseSize) }
-        }
-        for (band in 0 until bands) {
-            val top = throatTop + band * bandHeight
-            val profile = sin(PI.toFloat() * band / (bands - 1))
-            val stretch = 1f + .44f * strength * profile * profile
-            clipRect(clipLeft, top, throatRight, top + bandHeight) {
-                scale(stretch, 1f, pivot = Offset(throatRight, top)) {
-                    with(painter) { draw(poseSize) }
-                }
-            }
-        }
     }
 }
 

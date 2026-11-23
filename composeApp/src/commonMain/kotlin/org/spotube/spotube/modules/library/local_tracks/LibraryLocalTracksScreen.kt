@@ -57,6 +57,7 @@ import org.spotube.millennium.composables.MillenniumIcon
 import org.spotube.millennium.composables.MillenniumIconButton
 import org.spotube.millennium.composables.MillenniumIconButtonStyle
 import org.spotube.millennium.composables.MillenniumListTile
+import org.spotube.spotube.core.ui.component.QueueSwipeRow
 import org.spotube.millennium.theme.MillenniumTheme
 import org.spotube.millennium.theme.millenniumPanelBrush
 import org.spotube.millennium.theme.millenniumSurface
@@ -92,7 +93,8 @@ internal fun LocalTracksContent(
     onPlayFolder: () -> Unit,
     onRequestPermission: () -> Unit,
     modifier: Modifier = Modifier,
-    onManageFolders: () -> Unit = {}
+    onManageFolders: () -> Unit = {},
+    onQueueTrack: ((String) -> Unit)? = null,
 ) {
     val inset = LocalAppShellBottomInset.current
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
@@ -139,22 +141,24 @@ internal fun LocalTracksContent(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     items(state.visibleTracks, key = { it.path }) { track ->
-                        PlayableListTile(
-                            track.title,
-                            track.subtitle ?: stringResource(Res.string.media_unknown_artist),
-                            imageModel = track.artwork,
-                            onClick = { onPlayTrack(track.path) },
-                            onPlay = { onPlayTrack(track.path) },
-                            compact = true,
-                            trailingContent = {
-                                track.durationLabel?.let {
-                                    Text(
-                                        it,
-                                        style = AppTheme.typography.labelSmall,
-                                        color = AppTheme.colors.onSurfaceVariant
-                                    )
-                                }
-                            })
+                        QueueSwipeRow(onEnqueue = onQueueTrack?.let { enqueue -> { enqueue(track.path) } }) {
+                            PlayableListTile(
+                                track.title,
+                                track.subtitle ?: stringResource(Res.string.media_unknown_artist),
+                                imageModel = track.artwork,
+                                onClick = { onPlayTrack(track.path) },
+                                onPlay = { onPlayTrack(track.path) },
+                                compact = true,
+                                trailingContent = {
+                                    track.durationLabel?.let {
+                                        Text(
+                                            it,
+                                            style = AppTheme.typography.labelSmall,
+                                            color = AppTheme.colors.onSurfaceVariant
+                                        )
+                                    }
+                                })
+                        }
                     }
                 }
 

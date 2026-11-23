@@ -88,6 +88,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import org.spotube.plugin_interfaces.plugin_apis.lyrics.LyricsLine
+import org.spotube.spotube.PlatformType
 import org.spotube.spotube.core.audioplayer.AudioPlayerInterface
 import org.spotube.spotube.core.audioplayer.AudioPlayerQueue
 import org.spotube.spotube.core.audioplayer.LoopState
@@ -95,6 +96,8 @@ import org.spotube.spotube.core.jam.JamRole
 import org.spotube.spotube.core.jam.JamRoomService
 import org.spotube.spotube.core.navigation.NavigationCommands
 import org.spotube.spotube.core.navigation.Routes
+import org.spotube.spotube.core.ui.component.coverTrackSwipe
+import org.spotube.spotube.getPlatform
 import org.spotube.spotube.modules.lyrics.LyricsViewModel
 import org.spotube.spotube.modules.lyrics.SyncedLyricsList
 import org.spotube.spotube.modules.settings.AppearanceStyle
@@ -308,11 +311,15 @@ fun AppExpandedPlayer(
                         .padding(top = 20.dp, bottom = 24.dp),
                     contentAlignment = Alignment.Center
                 ) {
+                    val swipe = if (!isJamGuest && getPlatform().type == PlatformType.IOS) {
+                        Modifier.coverTrackSwipe(onLeft = ::onSkipNext, onRight = ::onSkipPrevious)
+                    } else Modifier
                     Box(
                         modifier = Modifier
                             .fillMaxWidth(0.84f)
                             .aspectRatio(1f)
                             .then(albumArtModifier)
+                            .then(swipe)
                             .clip(if (illustrated) AppTheme.shapes.large else RoundedCornerShape(22.dp))
                             .background(AppTheme.colors.surfaceContainerHighest)
                     ) {

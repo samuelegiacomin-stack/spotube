@@ -528,6 +528,7 @@
     <string name="player_pause_content_description">Pause</string>
     <string name="player_nothing_playing">Nothing playing</string>
     <string name="player_add_to_queue_content_description">Add to queue</string>
+    <string name="player_mascot_react">Animate the character</string>
 
     <string name="update_action_ignore">Ignore</string>
     <string name="update_action_update">Update</string>

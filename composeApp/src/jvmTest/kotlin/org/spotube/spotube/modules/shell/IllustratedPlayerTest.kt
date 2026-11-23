@@ -195,7 +195,8 @@ class IllustratedPlayerTest {
                 pointer(PointerEventType.Move, start.copy(y = 50f))
                 step(8)
                 pointer(PointerEventType.Release, start.copy(y = 50f))
-                step(130)
+                // Allow both the sheet spring and the strawberry's 1.8 s arrival to finish.
+                step(182)
                 val resting = screenshot("rest")
                 assertEquals(Color.DarkGray.toArgb(), resting.getRGB(5, 20), "${style.name} should be open")
                 assertTrue(resting.getRGB(2, height - 2) != Color.DarkGray.toArgb(), "scene should reach bottom-left")
@@ -222,6 +223,34 @@ class IllustratedPlayerTest {
                     }
                     assertTrue(mostChanged > 8, "The frog's throat should pulse while the player is open")
                     ImageIO.write(strongest, "png", output.resolve("blue_pond-croak.png"))
+                }
+
+                val bounds = motion.sceneBounds
+                val mascot = Offset(
+                    bounds.left + bounds.width * art.landingX,
+                    bounds.top + bounds.height * art.landingY - 22f,
+                )
+                val beforeTap = screenshot()
+                pointer(PointerEventType.Press, mascot)
+                step(2)
+                pointer(PointerEventType.Release, mascot)
+                step(25)
+                assertEquals(1, motion.reactionRequests, "${style.name} should respond to a tap on the mascot")
+                val reacting = screenshot("reaction")
+                val changed = ((mascot.y.toInt() - 36)..(mascot.y.toInt() + 24)).sumOf { y ->
+                    ((mascot.x.toInt() - 36)..(mascot.x.toInt() + 36)).count { x ->
+                        reacting.getRGB(x, y) != beforeTap.getRGB(x, y)
+                    }
+                }
+                assertTrue(changed > 30, "${style.name} should visibly react")
+                step(130)
+                if (style == AppearanceStyle.STRAWBERRIES) {
+                    val resurfaced = screenshot()
+                    assertEquals(
+                        beforeTap.getRGB(mascot.x.toInt(), mascot.y.toInt()),
+                        resurfaced.getRGB(mascot.x.toInt(), mascot.y.toInt()),
+                        "The berry should return to its fully settled position",
+                    )
                 }
 
                 pointer(PointerEventType.Press, Offset(width / 2f, 45f))

@@ -39,6 +39,11 @@ class LocalFolderViewModel(
         if (index >= 0) play(index)
     }
 
+    fun queueTrack(trackPath: String) {
+        val track = tracks().firstOrNull { it.path == trackPath } ?: return
+        viewModelScope.launch { audioPlayerQueue.addToQueue(track.toQueueEntry()) }
+    }
+
     private fun tracks(): List<LocalMediaTrack> =
         state.value.currentFolder?.tracks.orEmpty()
 
@@ -47,20 +52,20 @@ class LocalFolderViewModel(
         if (tracks.isEmpty()) return
         viewModelScope.launch {
             audioPlayerQueue.load(
-                entries = tracks.map {
-                    QueueEntry.LocalTrack(
-                        name = it.name,
-                        artists = it.artists,
-                        duration = it.durationMs,
-                        album = it.album,
-                        coverBytes = it.coverBytes,
-                        url = it.path
-                    )
-                },
+                entries = tracks.map { it.toQueueEntry() },
                 autoPlay = true,
                 startPosition = startPosition,
                 collectionEntry = null
             )
         }
     }
+
+    private fun LocalMediaTrack.toQueueEntry() = QueueEntry.LocalTrack(
+        name = name,
+        artists = artists,
+        duration = durationMs,
+        album = album,
+        coverBytes = coverBytes,
+        url = path,
+    )
 }

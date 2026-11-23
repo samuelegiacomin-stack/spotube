@@ -269,60 +269,64 @@ fun TrackList(
     val useDropdownForOptions = isDesktop && !isCompact
 
     val trackRow: @Composable (Int, MetadataTrack) -> Unit = { displayedIndex, track ->
-        TrackListRow(
-            index = displayedIndex + 1,
-            track = track,
-            showIndex = showIndex,
-            showAlbum = showAlbum,
-            useDropdownForOptions = useDropdownForOptions,
-            isCurrentTrack = track.id == currentTrackId,
-            // Only the current row depends on it, so play/pause/buffering flips don't recompose every row.
-            isCurrentTrackPlaying = isCurrentTrackPlaying && track.id == currentTrackId,
-            isSelectionMode = isSelectionMode,
-            isSelected = selectedTrackIds.contains(track.id),
-            onTrackClick = {
-                if (isSelectionMode) {
-                    selectedTrackIds =
-                        if (selectedTrackIds.contains(track.id)) {
-                            selectedTrackIds - track.id
-                        } else {
-                            selectedTrackIds + track.id
-                        }
-                } else if (isJamGuest) {
-                    onTrackOptionsAction(track, TrackOptionsAction.AddToJam)
-                } else {
-                    onTrackClick(track)
-                }
-            },
-            onLongClick = {
-                if (!useDropdownForOptions && !isSelectionMode) {
+        QueueSwipeRow(onEnqueue = if (isSelectionMode || isJamGuest) null else {
+            { onTrackOptionsAction(track, TrackOptionsAction.AddToQueue) }
+        }) {
+            TrackListRow(
+                index = displayedIndex + 1,
+                track = track,
+                showIndex = showIndex,
+                showAlbum = showAlbum,
+                useDropdownForOptions = useDropdownForOptions,
+                isCurrentTrack = track.id == currentTrackId,
+                // Only the current row depends on it, so play/pause/buffering flips don't recompose every row.
+                isCurrentTrackPlaying = isCurrentTrackPlaying && track.id == currentTrackId,
+                isSelectionMode = isSelectionMode,
+                isSelected = selectedTrackIds.contains(track.id),
+                onTrackClick = {
+                    if (isSelectionMode) {
+                        selectedTrackIds =
+                            if (selectedTrackIds.contains(track.id)) {
+                                selectedTrackIds - track.id
+                            } else {
+                                selectedTrackIds + track.id
+                            }
+                    } else if (isJamGuest) {
+                        onTrackOptionsAction(track, TrackOptionsAction.AddToJam)
+                    } else {
+                        onTrackClick(track)
+                    }
+                },
+                onLongClick = {
+                    if (!useDropdownForOptions && !isSelectionMode) {
+                        isSelectionMode = true
+                        selectedTrackIds = setOf(track.id)
+                    } else if (!useDropdownForOptions) {
+                        selectedTrackForOptions = track
+                    }
+                },
+                onSelectionToggle = { checked ->
                     isSelectionMode = true
-                    selectedTrackIds = setOf(track.id)
-                } else if (!useDropdownForOptions) {
-                    selectedTrackForOptions = track
-                }
-            },
-            onSelectionToggle = { checked ->
-                isSelectionMode = true
-                selectedTrackIds = if (checked) {
-                    selectedTrackIds + track.id
-                } else {
-                    selectedTrackIds - track.id
-                }
-            },
-            onTrackOptionsAction = { action ->
-                onTrackOptionsAction(
-                    track,
-                    action
-                )
-            },
-            trackOptionsState = trackOptionsState(track),
-            isInJam = isInJam,
-            isJamGuest = isJamGuest,
-            onShowOptionsClick = { selectedTrackForOptions = track },
-            onArtistClick = onArtistClick,
-            onAlbumClick = onAlbumClick,
-            onArtistsOverflowClick = { onArtistsOverflowClick(track) })
+                    selectedTrackIds = if (checked) {
+                        selectedTrackIds + track.id
+                    } else {
+                        selectedTrackIds - track.id
+                    }
+                },
+                onTrackOptionsAction = { action ->
+                    onTrackOptionsAction(
+                        track,
+                        action
+                    )
+                },
+                trackOptionsState = trackOptionsState(track),
+                isInJam = isInJam,
+                isJamGuest = isJamGuest,
+                onShowOptionsClick = { selectedTrackForOptions = track },
+                onArtistClick = onArtistClick,
+                onAlbumClick = onAlbumClick,
+                onArtistsOverflowClick = { onArtistsOverflowClick(track) })
+        }
     }
 
     // Shimmer, error, empty and next-page rows at the end of the card.

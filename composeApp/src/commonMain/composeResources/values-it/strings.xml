@@ -387,6 +387,7 @@
     <string name="player_pause_content_description">Pausa</string>
     <string name="player_nothing_playing">Nessuna riproduzione in corso</string>
     <string name="player_add_to_queue_content_description">Aggiungi alla coda</string>
+    <string name="player_mascot_react">Anima il personaggio</string>
 
     <string name="update_action_ignore">Ignora</string>
     <string name="update_action_update">Aggiorna</string>
